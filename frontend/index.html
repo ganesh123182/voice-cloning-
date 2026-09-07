@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trust Voice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <svg class="shield-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <div class="logo-text">
+                <h1>TRUST <span class="cyan-text">VOICE</span></h1>
+                <p class="subtitle">SIH PROJECT | AI VOICE ANALYSIS</p>
+            </div>
+        </div>
+        <div class="status-badge" id="system-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Online: Custom RF Deepfake Detector</span>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- Step 1: Upload -->
+        <div class="card upload-card">
+            <div class="card-title">
+                <span class="step-num">01</span> Upload Audio
+            </div>
+            <p class="card-desc">Select or drop an audio file for deepfake analysis</p>
+            
+            <div class="upload-zone" id="upload-zone">
+                <input type="file" id="audio-input" accept="audio/*" hidden>
+                <div id="upload-placeholder" class="upload-placeholder">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <p>Click to browse or drag file here</p>
+                </div>
+                
+                <div id="file-info" class="file-info hidden">
+                    <div class="file-icon-box">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                    </div>
+                    <div class="file-details">
+                        <span class="file-name" id="file-name">filename.mp3</span>
+                        <span class="file-size" id="file-size">0 KB</span>
+                    </div>
+                    <button class="close-btn" id="remove-file">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+                
+                <div id="audio-preview" class="audio-preview hidden">
+                    <audio id="audio-player" controls></audio>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Analyze -->
+        <div class="card analyze-card">
+            <button id="analyze-btn" class="analyze-btn" disabled>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                ANALYZE VOICE
+            </button>
+            <p class="analyze-desc">Analysis uses a custom trained Random Forest deepfake detection model</p>
+        </div>
+
+        <!-- Results Card -->
+        <div id="result-card" class="card result-card hidden">
+            <div class="result-header">
+                <h2>Analysis Results</h2>
+            </div>
+            
+            <div class="verdict-container">
+                <div class="verdict-ring">
+                    <svg viewBox="0 0 120 120">
+                        <circle class="ring-bg" cx="60" cy="60" r="54"/>
+                        <circle class="ring-progress" id="ring-progress" cx="60" cy="60" r="54"/>
+                    </svg>
+                    <div class="ring-text">
+                        <span id="ai-percent">0%</span>
+                        <span class="ring-label">AI Prob</span>
+                    </div>
+                </div>
+                <div class="verdict-details">
+                    <h3 id="verdict-title">Analyzing...</h3>
+                    <p id="verdict-subtitle"></p>
+                </div>
+            </div>
+            
+            <div class="explanation-box" id="explanation-box"></div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
