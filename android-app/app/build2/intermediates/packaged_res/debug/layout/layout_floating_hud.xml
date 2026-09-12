@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hud_root_container"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_glassmorphic"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:elevation="8dp">
+
+    <!-- Header: Title and Close Toggle -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="TrustVoice Shield"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+            
+        <ImageButton
+            android:id="@+id/btn_close_hud"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="#888888"
+            android:contentDescription="Close HUD" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        android:background="#33FFFFFF" />
+
+    <!-- Status Badge -->
+    <TextView
+        android:id="@+id/tv_status_badge"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SCANNING..."
+        android:textAlignment="center"
+        android:textColor="#FFCA28"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <!-- Risk Meter & Label -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+        
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AI Risk Score:"
+            android:textColor="#BBBBBB"
+            android:textSize="14sp" />
+            
+        <ProgressBar
+            android:id="@+id/progress_risk_meter"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp"
+            android:layout_height="8dp"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="#00E676" />
+            
+        <TextView
+            android:id="@+id/tv_risk_percentage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0%"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Threat Advisory -->
+    <TextView
+        android:id="@+id/tv_threat_advisory"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:text="Waiting for voice activity..."
+        android:textColor="#AAAAAA"
+        android:textSize="12sp"
+        android:textAlignment="center" />
+
+</LinearLayout>

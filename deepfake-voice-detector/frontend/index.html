@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trust Voice</title>
+    <title>Trust Voice Prototype</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,82 +15,169 @@
             <svg class="shield-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             <div class="logo-text">
                 <h1>TRUST <span class="cyan-text">VOICE</span></h1>
-                <p class="subtitle">SIH PROJECT | AI VOICE ANALYSIS</p>
+                <p class="subtitle">SIH PROJECT | SECURE VOICE IDENTITY</p>
             </div>
         </div>
-        <div class="status-badge" id="system-status">
-            <span class="status-dot"></span>
-            <span class="status-text">Online: Custom RF Deepfake Detector</span>
+        <div class="user-status hidden" id="user-status">
+            <span id="user-email-display">user@example.com</span>
+            <button id="logout-btn" class="text-btn">Logout</button>
         </div>
     </header>
 
     <main class="main-container">
-        <!-- Step 1: Upload -->
-        <div class="card upload-card">
-            <div class="card-title">
-                <span class="step-num">01</span> Upload Audio
-            </div>
-            <p class="card-desc">Select or drop an audio file for deepfake analysis</p>
-            
-            <div class="upload-zone" id="upload-zone">
-                <input type="file" id="audio-input" accept="audio/*" hidden>
-                <div id="upload-placeholder" class="upload-placeholder">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    <p>Click to browse or drag file here</p>
-                </div>
+        
+        <!-- Auth View -->
+        <div id="auth-view" class="view-section">
+            <div class="card auth-card">
+                <h2 id="auth-title">Sign In</h2>
+                <p class="card-desc">Access your Trust Voice dashboard</p>
                 
-                <div id="file-info" class="file-info hidden">
-                    <div class="file-icon-box">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                <form id="auth-form">
+                    <div class="input-group">
+                        <label>Email</label>
+                        <input type="email" id="auth-email" required placeholder="you@example.com">
                     </div>
-                    <div class="file-details">
-                        <span class="file-name" id="file-name">filename.mp3</span>
-                        <span class="file-size" id="file-size">0 KB</span>
+                    <div class="input-group">
+                        <label>Password</label>
+                        <input type="password" id="auth-password" required placeholder="••••••••">
                     </div>
-                    <button class="close-btn" id="remove-file">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                </div>
+                    <div id="auth-error" class="error-msg hidden"></div>
+                    <button type="submit" class="primary-btn" id="auth-submit-btn">Login</button>
+                </form>
                 
-                <div id="audio-preview" class="audio-preview hidden">
-                    <audio id="audio-player" controls></audio>
-                </div>
+                <p class="auth-toggle">
+                    <span id="auth-toggle-text">Don't have an account?</span> 
+                    <a href="#" id="auth-toggle-btn">Register</a>
+                </p>
             </div>
         </div>
 
-        <!-- Step 2: Analyze -->
-        <div class="card analyze-card">
-            <button id="analyze-btn" class="analyze-btn" disabled>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                ANALYZE VOICE
-            </button>
-            <p class="analyze-desc">Analysis uses a custom trained Random Forest deepfake detection model</p>
-        </div>
-
-        <!-- Results Card -->
-        <div id="result-card" class="card result-card hidden">
-            <div class="result-header">
-                <h2>Analysis Results</h2>
+        <!-- Dashboard View (requires login) -->
+        <div id="dashboard-view" class="view-section hidden">
+            <div class="tabs">
+                <button class="tab-btn active" data-target="enrollment-tab">Voice Enrollment</button>
+                <button class="tab-btn" data-target="monitoring-tab">Call Monitoring</button>
             </div>
-            
-            <div class="verdict-container">
-                <div class="verdict-ring">
-                    <svg viewBox="0 0 120 120">
-                        <circle class="ring-bg" cx="60" cy="60" r="54"/>
-                        <circle class="ring-progress" id="ring-progress" cx="60" cy="60" r="54"/>
-                    </svg>
-                    <div class="ring-text">
-                        <span id="ai-percent">0%</span>
-                        <span class="ring-label">AI Prob</span>
+
+            <!-- Enrollment Tab -->
+            <div id="enrollment-tab" class="tab-content active">
+                <div class="card">
+                    <div class="card-title"><span class="step-num">01</span> Create Voice Profile</div>
+                    <p class="card-desc">Upload a clean voice sample to enroll your identity securely on-chain.</p>
+                    
+                    <div id="profile-status" class="profile-status-box hidden">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        <div>
+                            <strong>Voice Profile Active</strong>
+                            <p id="profile-hash-display" style="font-family: monospace; font-size: 11px; color: #888; margin-top: 4px;"></p>
+                        </div>
+                    </div>
+
+                    <div class="upload-zone" id="enroll-upload-zone">
+                        <input type="file" id="enroll-audio-input" accept="audio/*" hidden>
+                        <div id="enroll-upload-placeholder" class="upload-placeholder">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            <p>Select audio for enrollment</p>
+                        </div>
+                        <div id="enroll-file-info" class="file-info hidden">
+                            <div class="file-details">
+                                <span class="file-name" id="enroll-file-name">filename.mp3</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button id="enroll-btn" class="primary-btn mt-4" disabled>ENROLL VOICE</button>
+                </div>
+            </div>
+
+            <!-- Monitoring Tab -->
+            <div id="monitoring-tab" class="tab-content hidden">
+                <div class="card">
+                    <div class="card-title"><span class="step-num">02</span> Live Call Simulation</div>
+                    <p class="card-desc">Detect deepfake voices in real-time using different input sources.</p>
+                    
+                    <div class="monitoring-modes">
+                        <button id="mode-upload-btn" class="mode-btn active">Upload File</button>
+                        <button id="mode-sim-btn" class="mode-btn">Simulate Call</button>
+                        <button id="mode-live-btn" class="mode-btn">Live Mic</button>
+                    </div>
+
+                    <!-- Upload Mode UI -->
+                    <div id="monitor-upload-section">
+                        <div class="upload-zone" id="monitor-upload-zone">
+                            <input type="file" id="monitor-audio-input" accept="audio/*" hidden>
+                            <div id="monitor-upload-placeholder" class="upload-placeholder">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                <p>Drop incoming call audio here</p>
+                            </div>
+                            <div id="monitor-file-info" class="file-info hidden">
+                                <div class="file-details">
+                                    <span class="file-name" id="monitor-file-name">filename.mp3</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="monitor-btn" class="analyze-btn mt-4" disabled>ANALYZE CALL</button>
+                    </div>
+
+                    <!-- Simulate Call Mode UI -->
+                    <div id="monitor-sim-section" class="hidden">
+                        <div class="live-status-box" style="border-color: rgba(255,170,0,0.3); background: rgba(255,170,0,0.05);">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffaa00" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            <span style="color:#ffaa00; font-weight:600;">Simulate Incoming Call</span>
+                            <p style="color:#999; font-size:13px; text-align:center;">Select an audio file to stream through the analysis pipeline chunk-by-chunk, simulating a live phone call. This analyzes the original digital audio directly.</p>
+                        </div>
+                        <div class="upload-zone mt-4" id="sim-upload-zone">
+                            <input type="file" id="sim-audio-input" accept="audio/*" hidden>
+                            <div id="sim-upload-placeholder" class="upload-placeholder">
+                                <p>Select fake audio file to simulate call</p>
+                            </div>
+                            <div id="sim-file-info" class="file-info hidden">
+                                <div class="file-details">
+                                    <span class="file-name" id="sim-file-name">filename.mp3</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="live-status-box mt-4" id="sim-status-box" style="display:none;">
+                            <div class="live-indicator recording" id="sim-indicator"></div>
+                            <span id="sim-status-text">Streaming call audio...</span>
+                        </div>
+                        <button id="start-sim-btn" class="analyze-btn mt-4" disabled>START SIMULATED CALL</button>
+                        <button id="stop-sim-btn" class="primary-btn mt-4 hidden" style="background: #ff3366; color: #fff;">STOP SIMULATION</button>
+                    </div>
+
+                    <!-- Live Mic Mode UI -->
+                    <div id="monitor-live-section" class="hidden">
+                        <div class="live-status-box">
+                            <div class="live-indicator" id="live-indicator"></div>
+                            <span id="live-status-text">Microphone Idle</span>
+                            <p style="color:#666; font-size:12px; text-align:center;">⚠ Live mic can only detect your own voice. To test fake recordings, use "Simulate Call" mode.</p>
+                        </div>
+                        <button id="start-live-btn" class="analyze-btn mt-4">START LIVE MONITORING</button>
+                        <button id="stop-live-btn" class="primary-btn mt-4 hidden" style="background: #ff3366; color: #fff;">STOP MONITORING</button>
                     </div>
                 </div>
-                <div class="verdict-details">
-                    <h3 id="verdict-title">Analyzing...</h3>
-                    <p id="verdict-subtitle"></p>
+                
+                <!-- Results -->
+                <div id="result-card" class="card result-card hidden mt-4">
+                    <div class="verdict-container">
+                        <div class="verdict-ring">
+                            <svg viewBox="0 0 120 120">
+                                <circle class="ring-bg" cx="60" cy="60" r="54"/>
+                                <circle class="ring-progress" id="ring-progress" cx="60" cy="60" r="54"/>
+                            </svg>
+                            <div class="ring-text">
+                                <span id="risk-percent">0%</span>
+                                <span class="ring-label">Risk</span>
+                            </div>
+                        </div>
+                        <div class="verdict-details">
+                            <h3 id="verdict-title">Analyzing...</h3>
+                            <p id="verdict-subtitle"></p>
+                        </div>
+                    </div>
                 </div>
+
             </div>
-            
-            <div class="explanation-box" id="explanation-box"></div>
         </div>
     </main>
 

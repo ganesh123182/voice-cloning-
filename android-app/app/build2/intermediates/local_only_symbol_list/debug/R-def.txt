@@ -1,0 +1,24 @@
+R_DEF: Internal format may change without notice
+local
+drawable bg_glassmorphic
+id btn_close_hud
+id btn_grant_permissions
+id btn_save_url
+id btn_simulate_scam
+id btn_test_hud
+id btn_toggle_live_service
+id et_server_url
+id hud_root_container
+id progress_risk_meter
+id tv_perm_mic
+id tv_perm_overlay
+id tv_perm_phone
+id tv_risk_percentage
+id tv_shield_status
+id tv_status_badge
+id tv_threat_advisory
+id view_status_dot
+layout activity_main
+layout layout_floating_hud
+string app_name
+style Theme.VoiceShield

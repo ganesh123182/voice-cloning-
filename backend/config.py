@@ -17,7 +17,7 @@ GENERATED_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
 # Server settings
-HOST = "127.0.0.1"
+HOST = "0.0.0.0"
 PORT = 8000
 
 # Audio settings
