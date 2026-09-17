@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="18dp"
+    android:viewportWidth="28"
+    android:viewportHeight="18">
+    <!-- Top Saffron Band -->
+    <path
+        android:fillColor="#FF9933"
+        android:pathData="M0,0 h28 v6 h-28 z" />
+    <!-- Middle White Band -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,6 h28 v6 h-28 z" />
+    <!-- Bottom Green Band -->
+    <path
+        android:fillColor="#138808"
+        android:pathData="M0,12 h28 v6 h-28 z" />
+    <!-- Ashoka Chakra (Navy Blue Circle) in Center -->
+    <path
+        android:fillColor="#000080"
+        android:pathData="M14,7.5 A1.5,1.5 0 1,0 14,10.5 A1.5,1.5 0 1,0 14,7.5 Z" />
+</vector>

@@ -23,8 +23,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 
 /**
@@ -49,6 +51,12 @@ class FloatingHUDService : Service() {
     private lateinit var rootContainer: View
     private lateinit var btnCloseHud: ImageButton
 
+    // Explainable AI UI
+    private lateinit var llExplainabilityReasons: LinearLayout
+    private lateinit var tvReason1: TextView
+    private lateinit var tvReason2: TextView
+    private lateinit var tvReason3: TextView
+
     private var pulseAnimator: ValueAnimator? = null
     private var isPulsing = false
 
@@ -72,11 +80,7 @@ class FloatingHUDService : Service() {
 
         // Register receiver for local broadcasts from LiveCallService
         val filter = IntentFilter(LiveCallService.ACTION_HUD_UPDATE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(hudUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(hudUpdateReceiver, filter)
-        }
+        ContextCompat.registerReceiver(this, hudUpdateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -111,6 +115,12 @@ class FloatingHUDService : Service() {
             tvThreatAdvisory = it.findViewById(R.id.tv_threat_advisory)
             rootContainer = it.findViewById(R.id.hud_root_container)
             btnCloseHud = it.findViewById(R.id.btn_close_hud)
+
+            // Explainable AI views
+            llExplainabilityReasons = it.findViewById(R.id.ll_explainability_reasons)
+            tvReason1 = it.findViewById(R.id.tv_reason_1)
+            tvReason2 = it.findViewById(R.id.tv_reason_2)
+            tvReason3 = it.findViewById(R.id.tv_reason_3)
             
             btnCloseHud.setOnClickListener {
                 // User chose to hide the HUD manually
@@ -119,12 +129,7 @@ class FloatingHUDService : Service() {
         }
 
         // Configuration for the Floating Window
-        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        val layoutFlag = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
         layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -145,6 +150,7 @@ class FloatingHUDService : Service() {
     }
 
     private fun setupDragListener() {
+        @Suppress("ClickableViewAccessibility")
         floatingView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -177,6 +183,10 @@ class FloatingHUDService : Service() {
             val json = JSONObject(jsonText)
             val speaker = json.optString("speaker", "unknown")
             val riskScore = json.optDouble("risk_score", 0.0).toInt()
+            val callerName = json.optString("caller_name", "Unknown Caller")
+            val callerNumber = json.optString("caller_number", "Unknown")
+            
+            val callerInfo = if (callerName == "Unknown Caller") callerNumber else "$callerName ($callerNumber)"
             
             // Default colors
             var badgeColor = Color.parseColor("#FFCA28") // Amber
@@ -197,19 +207,19 @@ class FloatingHUDService : Service() {
                     if (riskScore > 70) {
                         badgeColor = Color.parseColor("#FF1744") // Red
                         badgeText = "🚨 FAKE VOICE DETECTED"
-                        advisoryText = "Warning: Do not share OTPs or transfer money!"
+                        advisoryText = "Warning: Do not share OTPs with $callerInfo!"
                         meterColor = Color.parseColor("#FF1744")
                         shouldPulse = true
                     } else if (riskScore > 40) {
                         badgeColor = Color.parseColor("#FF9100") // Orange
                         badgeText = "SUSPICIOUS AUDIO"
-                        advisoryText = "Unusual voice patterns detected. Stay alert."
+                        advisoryText = "Unusual voice patterns from $callerInfo."
                         meterColor = Color.parseColor("#FF9100")
                         stopPulseAnimation()
                     } else {
                         badgeColor = Color.parseColor("#00E676") // Green
                         badgeText = "VERIFIED CALLER"
-                        advisoryText = "Voice matches human profile."
+                        advisoryText = "Voice matches human profile for $callerInfo."
                         meterColor = Color.parseColor("#00E676")
                         stopPulseAnimation()
                     }
@@ -230,10 +240,33 @@ class FloatingHUDService : Service() {
             progressRiskMeter.progress = riskScore
             progressRiskMeter.progressTintList = ColorStateList.valueOf(meterColor)
             
+            @Suppress("SetTextI18n")
             tvRiskPercentage.text = "$riskScore%"
             tvRiskPercentage.setTextColor(meterColor)
             
             tvThreatAdvisory.text = advisoryText
+
+            // ── Explainable AI Reasons ──
+            val reasonsArray = json.optJSONArray("explainability_reasons")
+            if (reasonsArray != null && reasonsArray.length() > 0 && riskScore > 40) {
+                llExplainabilityReasons.visibility = View.VISIBLE
+                
+                // Show up to 3 reasons
+                val reasonViews = listOf(tvReason1, tvReason2, tvReason3)
+                for (i in reasonViews.indices) {
+                    if (i < reasonsArray.length()) {
+                        reasonViews[i].text = reasonsArray.optString(i, "")
+                        reasonViews[i].visibility = View.VISIBLE
+                    } else {
+                        reasonViews[i].visibility = View.GONE
+                    }
+                }
+            } else {
+                llExplainabilityReasons.visibility = View.GONE
+                tvReason1.visibility = View.GONE
+                tvReason2.visibility = View.GONE
+                tvReason3.visibility = View.GONE
+            }
 
             if (shouldPulse) {
                 startPulseAnimation()

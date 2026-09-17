@@ -22,7 +22,7 @@ PORT = 8000
 
 # Audio settings
 MAX_UPLOAD_SIZE_MB = 50
-ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".webm"}
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".webm", ".aac", ".mp4", ".3gp"}
 SAMPLE_RATE = 22050
 
 # Demo mode - set to True when real ML models can't run

@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="220dp"
+    android:height="150dp"
+    android:viewportWidth="220"
+    android:viewportHeight="150">
+
+    <!-- Soft Cloud / Blob Background -->
+    <path
+        android:fillColor="#EFF6FF"
+        android:pathData="M30,75 C30,35 60,20 110,20 C160,20 200,40 200,80 C200,120 165,140 110,140 C55,140 30,115 30,75 Z" />
+
+    <!-- Blue Chat Bubble (Left) -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M45,45 h48 a6,6 0 0,1 6,6 v26 a6,6 0 0,1 -6,6 h-30 l-8,8 v-8 h-10 a6,6 0 0,1 -6,-6 v-26 a6,6 0 0,1 6,-6 z" />
+    <!-- Chat Bubble Content Lines -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,53 h32 v3 h-32 z M53,60 h24 v3 h-24 z M53,67 h16 v3 h-16 z" />
+
+    <!-- Waveform Bubble Card (Right) -->
+    <path
+        android:fillColor="#DBEAFE"
+        android:pathData="M140,40 h45 a6,6 0 0,1 6,6 v24 a6,6 0 0,1 -6,6 h-45 a6,6 0 0,1 -6,-6 v-24 a6,6 0 0,1 6,-6 z" />
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M148,53 h2 v10 h-2 z M153,49 h2 v18 h-2 z M158,45 h2 v26 h-2 z M163,48 h2 v20 h-2 z M168,52 h2 v12 h-2 z M173,50 h2 v16 h-2 z M178,54 h2 v8 h-2 z" />
+
+    <!-- Person Avatar Silhouette (Center) -->
+    <!-- Head -->
+    <path
+        android:fillColor="#1E3A8A"
+        android:pathData="M110,55 A14,14 0 1,0 110,83 A14,14 0 1,0 110,55 Z" />
+    <!-- Shoulders -->
+    <path
+        android:fillColor="#1E3A8A"
+        android:pathData="M88,118 C88,98 96,90 110,90 C124,90 132,98 132,118 Z" />
+</vector>

@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <!-- Dark Navy Circular Button Base -->
+    <path
+        android:fillColor="#0B1B3D"
+        android:pathData="M28,2 A26,26 0 1,0 28,54 A26,26 0 1,0 28,2 Z" />
+    <!-- White Arrow Right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,19 L35,28 L26,37 L24.5,35.5 L31.5,28.5 L17,28.5 L17,27.5 L31.5,27.5 L24.5,20.5 Z" />
+</vector>

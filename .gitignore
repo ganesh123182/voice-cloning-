@@ -24,3 +24,43 @@ Desktop.ini
 $RECYCLE.BIN/
 *.tmp
 *.log
+backend_live.log
+calibration_logs.txt
+
+# Databases & local user state
+*.db
+*.sqlite
+*.sqlite3
+backend/voice_enrollment.db
+
+# Audio uploads & scratch recordings
+backend/uploads/
+deepfake-voice-detector/uploads/
+
+# Model Checkpoints & Large Weights (>50MB)
+deepfake-voice-detector/models/
+deepfake-voice-detector/outputs/
+models/
+backend/models/
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+*.pkl
+
+# Android build outputs and caches
+.gradle/
+android-app/.gradle/
+android-app/local.properties
+android-app/build/
+android-app/*/build/
+android-app/*/build*/
+
+# Node modules & Hardhat build artifacts
+node_modules/
+*/node_modules/
+*/*/node_modules/
+blockchain/artifacts/
+blockchain/cache/
+
+

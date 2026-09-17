@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TrustVoice Shield</string>
+    <string name="recording">Recording…</string>
+    <string name="start_recording">Start Recording</string>
 </resources>

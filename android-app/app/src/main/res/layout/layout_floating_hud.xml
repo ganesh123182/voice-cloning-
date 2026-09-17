@@ -100,4 +100,54 @@
         android:textSize="12sp"
         android:textAlignment="center" />
 
+    <!-- Explainable AI Reasons Container -->
+    <LinearLayout
+        android:id="@+id/ll_explainability_reasons"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="8dp"
+        android:visibility="gone"
+        android:paddingTop="6dp">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#22FFFFFF"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:id="@+id/tv_reason_1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FF8A80"
+            android:textSize="11sp"
+            android:visibility="gone"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+
+        <TextView
+            android:id="@+id/tv_reason_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FF8A80"
+            android:textSize="11sp"
+            android:visibility="gone"
+            android:layout_marginTop="2dp"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+
+        <TextView
+            android:id="@+id/tv_reason_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FF8A80"
+            android:textSize="11sp"
+            android:visibility="gone"
+            android:layout_marginTop="2dp"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+
+    </LinearLayout>
+
 </LinearLayout>

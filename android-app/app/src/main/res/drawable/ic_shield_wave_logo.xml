@@ -1,0 +1,34 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- Outer Shield Glow / Border -->
+    <path
+        android:fillColor="#1E3A8A"
+        android:pathData="M60,10 L100,28 L100,65 C100,88 83,108 60,115 C37,108 20,88 20,65 L20,28 Z" />
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M60,16 L94,31 L94,65 C94,85 79,103 60,109 C41,103 26,85 26,65 L26,31 Z" />
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="3"
+        android:pathData="M60,18 L92,33 L92,65 C92,84 78,101 60,107 C42,101 28,84 28,65 L28,33 Z" />
+    
+    <!-- Audio Waveform Bars Inside Shield -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M44,52 h5 v20 h-5 z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M52,42 h5 v40 h-5 z" />
+    <path
+        android:fillColor="#60A5FA"
+        android:pathData="M60,35 h5 v54 h-5 z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M68,42 h5 v40 h-5 z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M76,52 h5 v20 h-5 z" />
+</vector>

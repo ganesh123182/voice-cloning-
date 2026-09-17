@@ -2,11 +2,26 @@
 <resources>
     <!-- App Theme (required by AndroidManifest) -->
     <style name="Theme.VoiceShield" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#1E88E5</item>
-        <item name="colorPrimaryVariant">#1565C0</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#26A69A</item>
-        <item name="colorSecondaryVariant">#00897B</item>
-        <item name="colorOnSecondary">#000000</item>
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/trustvoice_primary</item>
+        <item name="colorPrimaryVariant">@color/trustvoice_primary_dark</item>
+        <item name="colorOnPrimary">@color/text_white</item>
+        
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/trustvoice_secondary</item>
+        <item name="colorSecondaryVariant">@color/trustvoice_accent</item>
+        <item name="colorOnSecondary">@color/text_white</item>
+        
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">@color/bg_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        
+        <!-- Background colors. -->
+        <item name="android:windowBackground">@color/bg_light</item>
+        <item name="colorSurface">@color/card_bg</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        
+        <!-- Typography -->
+        <item name="fontFamily">sans-serif</item>
     </style>
 </resources>

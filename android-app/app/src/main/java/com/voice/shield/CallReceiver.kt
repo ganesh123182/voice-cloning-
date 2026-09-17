@@ -3,6 +3,8 @@ package com.voice.shield
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.ContactsContract
 import android.telephony.TelephonyManager
 import android.util.Log
 
@@ -21,43 +23,65 @@ class CallReceiver : BroadcastReceiver() {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
-        Log.d(TAG, "Phone state changed: $state")
+        @Suppress("DEPRECATION")
+        val incomingNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER) ?: "Unknown"
+        Log.d(TAG, "Phone state changed: $state, number: $incomingNumber")
 
         when (state) {
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                 // Call answered (incoming or outgoing)
-                Log.i(TAG, "Call answered: Starting LiveCallService")
-                startAudioService(context)
+                val callerName = getContactName(context, incomingNumber)
+                Log.i(TAG, "Call answered: Sending START_RECORDING command to LiveCallService. Caller: $callerName ($incomingNumber)")
+                
+                val commandIntent = Intent(LiveCallService.ACTION_START_RECORDING).apply {
+                    setPackage(context.packageName)
+                    putExtra("caller_number", incomingNumber)
+                    putExtra("caller_name", callerName)
+                }
+                context.sendBroadcast(commandIntent)
             }
             TelephonyManager.EXTRA_STATE_IDLE -> {
                 // Call ended or rejected - check that device is actually idle
                 val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
                 @Suppress("DEPRECATION")
                 val currentCallState = tm?.callState
-                if (currentCallState != null && currentCallState != TelephonyManager.CALL_STATE_IDLE) {
+                if ((currentCallState != null) && (currentCallState != TelephonyManager.CALL_STATE_IDLE)) {
                     Log.i(TAG, "Ignoring IDLE broadcast: device callState is active ($currentCallState)")
                     return
                 }
-                Log.i(TAG, "Call ended: Stopping LiveCallService")
-                stopAudioService(context)
+                Log.i(TAG, "Call ended: Sending STOP_RECORDING command to LiveCallService")
+                val commandIntent = Intent(LiveCallService.ACTION_STOP_RECORDING).apply {
+                    setPackage(context.packageName)
+                }
+                context.sendBroadcast(commandIntent)
             }
             TelephonyManager.EXTRA_STATE_RINGING -> {
-                Log.d(TAG, "Incoming call ringing...")
+                Log.d(TAG, "Incoming call ringing... Number: $incomingNumber")
             }
         }
     }
 
-    private fun startAudioService(context: Context) {
-        val serviceIntent = Intent(context, LiveCallService::class.java)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
-            context.startService(serviceIntent)
+    private fun getContactName(context: Context, phoneNumber: String): String {
+        if (phoneNumber == "Unknown" || phoneNumber.isBlank()) return "Unknown Caller"
+        
+        var contactName = "Unknown Caller"
+        try {
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+            val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+            
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (nameIndex >= 0) {
+                        contactName = cursor.getString(nameIndex)
+                    }
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "READ_CONTACTS permission not granted", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error looking up contact name", e)
         }
-    }
-
-    private fun stopAudioService(context: Context) {
-        val serviceIntent = Intent(context, LiveCallService::class.java)
-        context.stopService(serviceIntent)
+        return contactName
     }
 }

@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Red arc -->
+    <path
+        android:fillColor="#EA4335"
+        android:pathData="M12,5 C13.7,5 15.1,5.6 16.3,6.7 L19.8,3.2 C17.7,1.2 15.1,0 12,0 C7.4,0 3.5,2.6 1.4,6.5 L5.4,9.6 C6.4,6.9 9,5 12,5 Z" />
+    <!-- Yellow arc -->
+    <path
+        android:fillColor="#FBBC05"
+        android:pathData="M5.4,9.6 C5.1,10.4 5,11.2 5,12 C5,12.8 5.1,13.6 5.4,14.4 L1.4,17.5 C0.5,15.8 0,14 0,12 C0,10 0.5,8.2 1.4,6.5 L5.4,9.6 Z" />
+    <!-- Green arc -->
+    <path
+        android:fillColor="#34A853"
+        android:pathData="M12,24 C15.2,24 17.9,22.9 19.8,21.1 L16,17.9 C14.9,18.7 13.6,19.1 12,19.1 C9,19.1 6.4,17.2 5.4,14.5 L1.4,17.6 C3.5,21.4 7.4,24 12,24 Z" />
+    <!-- Blue crossbar & arc -->
+    <path
+        android:fillColor="#4285F4"
+        android:pathData="M23.5,12.3 C23.5,11.5 23.4,10.7 23.3,10 L12,10 L12,14.5 L18.5,14.5 C18.2,16.1 17.3,17.2 16,17.9 L19.8,21.1 C22,19 23.5,15.9 23.5,12.3 Z" />
+</vector>

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Enrollment - Trust Voice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .enroll-card {
+            margin-top: 2rem;
+            text-align: center;
+        }
+        .form-group {
+            margin-top: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #a0aec0;
+            font-size: 0.9rem;
+        }
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: rgba(20, 24, 34, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-family: inherit;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #06b6d4;
+        }
+        #result-box {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid #06b6d4;
+            border-radius: 8px;
+            text-align: left;
+        }
+        .hash-text {
+            font-family: monospace;
+            word-break: break-all;
+            color: #06b6d4;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <svg class="shield-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <div class="logo-text">
+                <h1>TRUST <span class="cyan-text">VOICE</span></h1>
+                <p class="subtitle">VOICE ID REGISTRATION</p>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <div class="card enroll-card">
+            <h2>Secure Blockchain Enrollment</h2>
+            <p class="card-desc" style="margin-bottom: 2rem;">Register your unique Voice ID to protect your identity from deepfakes.</p>
+            
+            <div class="form-group">
+                <label for="user-token">User Token (Use the same token as your Mobile App)</label>
+                <input type="text" id="user-token" class="form-input" placeholder="e.g. test_user" value="test">
+            </div>
+
+            <div class="upload-zone" id="upload-zone" style="margin-top: 1rem;">
+                <input type="file" id="audio-input" accept="audio/*" hidden>
+                <div id="upload-placeholder" class="upload-placeholder">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <p>Click to select your voice sample</p>
+                </div>
+                <div id="file-info" class="file-info hidden">
+                    <div class="file-icon-box">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                    </div>
+                    <div class="file-details">
+                        <span class="file-name" id="file-name">filename.mp3</span>
+                    </div>
+                    <button class="close-btn" id="remove-file">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <button id="enroll-btn" class="analyze-btn" disabled style="margin-top: 2rem;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                ENROLL VOICE ID
+            </button>
+
+            <div id="result-box" class="hidden">
+                <h3 style="color: #4ade80; margin-bottom: 0.5rem;">✅ Enrollment Successful!</h3>
+                <p style="font-size: 0.9rem; color: #cbd5e1;">Your voiceprint is secured in the blockchain ledger.</p>
+                <div class="hash-text" id="hash-display"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const uploadZone = document.getElementById('upload-zone');
+        const audioInput = document.getElementById('audio-input');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const removeFileBtn = document.getElementById('remove-file');
+        const enrollBtn = document.getElementById('enroll-btn');
+        const resultBox = document.getElementById('result-box');
+        const hashDisplay = document.getElementById('hash-display');
+        const tokenInput = document.getElementById('user-token');
+
+        let currentFile = null;
+
+        uploadZone.addEventListener('click', (e) => {
+            if (e.target !== removeFileBtn && !removeFileBtn.contains(e.target)) {
+                audioInput.click();
+            }
+        });
+
+        audioInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                currentFile = e.target.files[0];
+                fileName.textContent = currentFile.name;
+                uploadPlaceholder.classList.add('hidden');
+                fileInfo.classList.remove('hidden');
+                enrollBtn.disabled = false;
+                resultBox.classList.add('hidden');
+            }
+        });
+
+        removeFileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            audioInput.value = '';
+            currentFile = null;
+            uploadPlaceholder.classList.remove('hidden');
+            fileInfo.classList.add('hidden');
+            enrollBtn.disabled = true;
+            resultBox.classList.add('hidden');
+        });
+
+        enrollBtn.addEventListener('click', async () => {
+            if (!currentFile || !tokenInput.value) return;
+
+            enrollBtn.innerHTML = 'ENROLLING...';
+            enrollBtn.disabled = true;
+            resultBox.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            formData.append('user_id', tokenInput.value);
+
+            try {
+                const response = await fetch('/api/enroll_voice', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    hashDisplay.textContent = `SHA-256 Hash:\n${data.hash}`;
+                    resultBox.classList.remove('hidden');
+                } else {
+                    alert('Error: ' + data.detail);
+                }
+            } catch (err) {
+                alert('Connection error');
+            } finally {
+                enrollBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> ENROLL VOICE ID';
+                enrollBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

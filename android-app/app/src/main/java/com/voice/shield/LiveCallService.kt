@@ -1,20 +1,18 @@
 package com.voice.shield
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.view.accessibility.AccessibilityEvent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.os.Build
-import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +26,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -42,28 +41,31 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   CallReceiver.OFFHOOK  →  startForegroundService(LiveCallService)
  *   CallReceiver.IDLE     →  stopService(LiveCallService)
  */
-class LiveCallService : Service() {
+class LiveCallService : AccessibilityService() {
 
     companion object {
         private const val TAG = "LiveCallService"
-        private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "TrustVoiceCallShieldChannel"
 
         // Broadcast action and extra key for the Floating HUD
         const val ACTION_HUD_UPDATE = "com.voice.shield.HUD_UPDATE"
         const val EXTRA_JSON_PAYLOAD = "json_payload"
+        
+        // Commands received from CallReceiver
+        const val ACTION_START_RECORDING = "com.voice.shield.START_RECORDING"
+        const val ACTION_STOP_RECORDING = "com.voice.shield.STOP_RECORDING"
 
         // ---- Audio Configuration ----
         private const val SAMPLE_RATE = 16000          // 16 kHz
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         // 3-second buffer: 16000 samples/s × 2 bytes/sample × 1 channel × 3 s = 96,000 bytes
-        private const val CHUNK_DURATION_SEC = 3
-        private const val BUFFER_SIZE_BYTES = SAMPLE_RATE * 2 * 1 * CHUNK_DURATION_SEC  // 96000
+        private const val CHUNK_DURATION_SEC = 1
+        private const val BUFFER_SIZE_BYTES = SAMPLE_RATE * 2 * 1 * CHUNK_DURATION_SEC
 
         // PC's IP on phone's hotspot Wi-Fi network
         private const val DEFAULT_WEBSOCKET_URL =
-            "ws://10.163.249.212:8000/api/monitoring/live?token=test_token"
+            "ws://10.201.123.212:8000/api/monitoring/live?token=test_token"
 
         // Reconnection parameters
         private const val MAX_RECONNECT_ATTEMPTS = 5
@@ -87,47 +89,76 @@ class LiveCallService : Service() {
         .writeTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    // =========================================================================
-    //  Service lifecycle
-    // =========================================================================
+    private var currentCallerNumber = "Unknown"
+    private var currentCallerName = "Unknown Caller"
 
-    override fun onCreate() {
-        super.onCreate()
-        Log.d(TAG, "Service created")
-        createNotificationChannel()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(TAG, "Starting LiveCallService")
-
-        val notification = buildNotification()
-
-        // Android 10 (Q)+ supports typed foreground services; Android 14 (U)
-        // mandates FOREGROUND_SERVICE_MICROPHONE permission for this type.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+    private val commandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action
+            Log.i(TAG, "CommandReceiver received action: $action")
+            
+        if (action == ACTION_START_RECORDING) {
+                if (!isRecording.get()) {
+                    currentCallerNumber = intent?.getStringExtra("caller_number") ?: "Unknown"
+                    currentCallerName = intent?.getStringExtra("caller_name") ?: "Unknown Caller"
+                    
+                    val hudIntent = Intent(context, FloatingHUDService::class.java)
+                    startService(hudIntent)
+                    
+                    connectWebSocket()
+                    startAudioCapture()
+                }
+            } else if (action == ACTION_STOP_RECORDING) {
+                if (isRecording.get()) {
+                    stopAudioCapture()
+                    disconnectWebSocket()
+                    
+                    val hudIntent = Intent(context, FloatingHUDService::class.java)
+                    stopService(hudIntent)
+                }
+            }
         }
-
-        // Start the Floating HUD safely now that we are in the foreground
-        val hudIntent = Intent(this, FloatingHUDService::class.java)
-        startService(hudIntent)
-
-        connectWebSocket()
-        startAudioCapture()
-
-        return START_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null  // Not a bound service
+    // =========================================================================
+    //  AccessibilityService lifecycle
+    // =========================================================================
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // We do not process UI accessibility events, we just need the background privilege
+    }
+
+    override fun onInterrupt() {
+        Log.w(TAG, "AccessibilityService interrupted")
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        Log.i(TAG, "AccessibilityService onServiceConnected")
+
+        // Register receiver for CallReceiver commands
+        val filter = IntentFilter().apply {
+            addAction(ACTION_START_RECORDING)
+            addAction(ACTION_STOP_RECORDING)
+        }
+        
+        ContextCompat.registerReceiver(this, commandReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        // Standard initialization
+        // We can omit startForeground because AccessibilityServices generally don't need it
+        // unless we specifically want a permanent notification.
+        // We will not start the HUD here. We wait for a call to start it.
+        Log.i(TAG, "AccessibilityService running, waiting for phone call to begin recording...")
+    }
 
     override fun onDestroy() {
         Log.i(TAG, "Destroying LiveCallService")
+        
+        try {
+            unregisterReceiver(commandReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to unregister receiver", e)
+        }
         
         // Stop the Floating HUD
         val hudIntent = Intent(this, FloatingHUDService::class.java)
@@ -141,41 +172,23 @@ class LiveCallService : Service() {
         super.onDestroy()
     }
 
-    // =========================================================================
-    //  Notification
-    // =========================================================================
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "TrustVoice Call Shield",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Active call monitoring for deepfake detection"
-                setShowBadge(false)
-            }
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(channel)
-        }
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "Service created")
+        createNotificationChannel()
     }
 
-    private fun buildNotification(): Notification {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-        val pending = PendingIntent.getActivity(
-            this, 0, launchIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("TrustVoice Call Shield Active")
-            .setContentText("Monitoring live call for deepfakes…")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(pending)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "TrustVoice Call Shield",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Active call monitoring for deepfake detection"
+            setShowBadge(false)
+        }
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(channel)
     }
 
     // =========================================================================
@@ -183,35 +196,43 @@ class LiveCallService : Service() {
     // =========================================================================
 
     private fun connectWebSocket() {
-        val prefs = getSharedPreferences("TrustVoicePrefs", Context.MODE_PRIVATE)
-        val url = prefs.getString("websocket_url", null) ?: DEFAULT_WEBSOCKET_URL
+        val prefs = getSharedPreferences("TrustVoicePrefs", MODE_PRIVATE)
+        val baseUrl = prefs.getString("websocket_url", null) ?: DEFAULT_WEBSOCKET_URL
+        
+        // Append caller number and name to the WebSocket URL
+        val urlBuilder = baseUrl.toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("caller_number", currentCallerNumber)
+            ?.addQueryParameter("caller_name", currentCallerName)
+        
+        val url = urlBuilder?.build()?.toString() ?: baseUrl
+        
         Log.i(TAG, "Connecting WebSocket to: $url")
         val request = Request.Builder().url(url).build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
 
-            override fun onOpen(ws: WebSocket, response: Response) {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket connected -> HTTP ${response.code} Switching Protocols")
                 isWebSocketConnected.set(true)
                 reconnectAttempts = 0
             }
 
-            override fun onMessage(ws: WebSocket, text: String) {
+            override fun onMessage(webSocket: WebSocket, text: String) {
                 Log.d(TAG, "WebSocket received JSON: $text")
                 handleServerResponse(text)
             }
 
-            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closing: $code / $reason")
-                ws.close(code, reason)
+                webSocket.close(code, reason)
             }
 
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "WebSocket closed: $code / $reason")
                 isWebSocketConnected.set(false)
             }
 
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}", t)
                 isWebSocketConnected.set(false)
                 scheduleReconnect()
@@ -259,8 +280,8 @@ class LiveCallService : Service() {
                 return
             }
 
-            // Attempt to use VOICE_DOWNLINK (for clear incoming audio), fallback to MIC
-            val audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            // Use VOICE_RECOGNITION (bypasses OS blocks via AccessibilityService)
+            val audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION
             
             audioRecord = AudioRecord(
                 audioSource,
@@ -296,7 +317,7 @@ class LiveCallService : Service() {
      * accumulates exactly [BUFFER_SIZE_BYTES] (3 seconds), and pushes
      * the chunk over the WebSocket as a raw binary message.
      */
-    private suspend fun audioReadLoop() {
+    private fun audioReadLoop() {
         val buffer = ByteArray(BUFFER_SIZE_BYTES)
         var offset = 0
 
@@ -356,12 +377,13 @@ class LiveCallService : Service() {
         isRecording.set(false)
         try {
             audioRecord?.stop()
-        } catch (e: IllegalStateException) {
+        } catch (e: Exception) {
             Log.w(TAG, "AudioRecord.stop() threw: ${e.message}")
+        } finally {
+            audioRecord?.release()
+            audioRecord = null
+            Log.i(TAG, "AudioRecord stopped and released")
         }
-        audioRecord?.release()
-        audioRecord = null
-        Log.i(TAG, "AudioRecord stopped and released")
     }
 
     // =========================================================================

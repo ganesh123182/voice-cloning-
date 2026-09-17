@@ -1,0 +1,49 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="220dp"
+    android:height="150dp"
+    android:viewportWidth="220"
+    android:viewportHeight="150">
+
+    <!-- Soft Cloud / Blob Background -->
+    <path
+        android:fillColor="#EFF6FF"
+        android:pathData="M30,75 C30,35 60,20 110,20 C160,20 200,40 200,80 C200,120 165,140 110,140 C55,140 30,115 30,75 Z" />
+
+    <!-- Sparkle Star Left -->
+    <path
+        android:fillColor="#60A5FA"
+        android:pathData="M50,75 Q55,75 55,70 Q55,75 60,75 Q55,75 55,80 Q55,75 50,75 Z" />
+
+    <!-- Sparkle Star Right -->
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M175,65 Q182,65 182,58 Q182,65 189,65 Q182,65 182,72 Q182,65 175,65 Z" />
+
+    <!-- Outer Shield Halo -->
+    <path
+        android:fillColor="#DBEAFE"
+        android:pathData="M110,25 L155,46 L155,88 C155,114 135,138 110,146 C85,138 65,114 65,88 L65,46 Z" />
+
+    <!-- Main Shield (Vibrant Blue) -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M110,32 L148,50 L148,87 C148,109 131,130 110,137 C89,130 72,109 72,87 L72,50 Z" />
+
+    <!-- Padlock Shackle -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M102,78 V68 C102,63 105,60 110,60 C115,60 118,63 118,68 V78" />
+
+    <!-- Padlock Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M98,77 h24 a3,3 0 0,1 3,3 v18 a3,3 0 0,1 -3,3 h-24 a3,3 0 0,1 -3,-3 v-18 a3,3 0 0,1 3,-3 z" />
+
+    <!-- Padlock Keyhole -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M109,83 A2,2 0 1,0 111,83 L111.5,91 L108.5,91 Z" />
+</vector>

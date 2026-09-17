@@ -1,440 +1,165 @@
-"""
-Voice Detection Module - Analyzes audio to determine if it's AI-generated or human.
-
-Uses a trained Random Forest model on MFCC + spectral features for accurate
-deepfake voice detection. Falls back to spectral heuristics if model is unavailable.
-"""
 import time
 import traceback
+import torch
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional
+from transformers import AutoFeatureExtractor, Wav2Vec2ForSequenceClassification
+import librosa
 
-from backend.audio_utils import convert_to_wav, read_wav, compute_spectral_features
+# Use the local fine-tuned Wav2Vec2 model from the user's workspace
+import os
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "deepfake-voice-detector", "models", "wav2vec2-deepfake-finetuned")
 
-
-def _extract_ml_features(filepath: str) -> Optional[np.ndarray]:
-    """Extract the same feature set used during model training.
-    Must match train.py / deepfake-voice-detector exactly."""
-    try:
-        import av
-        import librosa
-
-        TARGET_SR = 16000
-
-        # Decode audio with PyAV (handles mp3, mp4, ogg, etc.)
-        container = av.open(filepath)
-        try:
-            stream = container.streams.audio[0]
-            sr = stream.rate
-
-            samples = []
-            for frame in container.decode(stream):
-                arr = frame.to_ndarray()
-                if arr.shape[0] > 1:
-                    arr = np.mean(arr, axis=0)
-                else:
-                    arr = arr[0]
-                samples.append(arr)
-        finally:
-            container.close()
-
-        y = np.concatenate(samples).astype(np.float32)
-
-        # Resample to 16 kHz if necessary
-        if sr != TARGET_SR:
-            y = librosa.resample(y, orig_sr=sr, target_sr=TARGET_SR)
-            sr = TARGET_SR
-
-        # Trim silence
-        y, _ = librosa.effects.trim(y, top_db=20)
-        if len(y) < sr * 0.3:  # Skip files shorter than 0.3 seconds
-            return None
-
-        features = []
-
-        # 1. MFCC (40 coefficients) - mean + std
-        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40)
-        features.extend(np.mean(mfcc.T, axis=0))  # 40
-        features.extend(np.std(mfcc.T, axis=0))    # 40
-        
-        # 2. Delta and Delta-Delta MFCC
-        delta_mfcc = librosa.feature.delta(mfcc)
-        delta2_mfcc = librosa.feature.delta(mfcc, order=2)
-        features.extend(np.mean(delta_mfcc.T, axis=0))  # 40
-        features.extend(np.mean(delta2_mfcc.T, axis=0)) # 40
-        
-        # 2b. Pitch (F0) tracking to catch synthetic artifacts
-        f0 = librosa.yin(y, fmin=50, fmax=400, frame_length=2048)
-        features.append(np.nanmean(f0))
-        features.append(np.nanstd(f0))
-
-        # 3. Spectral Centroid
-        cent = librosa.feature.spectral_centroid(y=y, sr=sr)
-        features.append(np.mean(cent))
-        features.append(np.std(cent))
-
-        # 4. Spectral Bandwidth
-        bw = librosa.feature.spectral_bandwidth(y=y, sr=sr)
-        features.append(np.mean(bw))
-        features.append(np.std(bw))
-
-        # 5. Spectral Rolloff
-        rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
-        features.append(np.mean(rolloff))
-        features.append(np.std(rolloff))
-
-        # 6. Zero Crossing Rate
-        zcr = librosa.feature.zero_crossing_rate(y)
-        features.append(np.mean(zcr))
-        features.append(np.std(zcr))
-
-        # 7. Chroma features (12 pitch classes)
-        chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-        features.extend(np.mean(chroma.T, axis=0))  # 12
-
-        # 8. RMS Energy
-        rms = librosa.feature.rms(y=y)
-        features.append(np.mean(rms))
-        features.append(np.std(rms))
-
-        # 9. Spectral Contrast (7 bands)
-        contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
-        features.extend(np.mean(contrast.T, axis=0))  # 7
-
-        # 10. Spectral Flatness
-        flatness = librosa.feature.spectral_flatness(y=y)
-        features.append(np.mean(flatness))
-        features.append(np.std(flatness))
-
-        # 11. Mel spectrogram statistics
-        mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=20)
-        mel_db = librosa.power_to_db(mel, ref=np.max)
-        features.extend(np.mean(mel_db.T, axis=0))  # 20
-
-        return np.array(features, dtype=np.float32)
-    except Exception as e:
-        print(f"[ERROR] Feature extraction failed: {e}")
-        traceback.print_exc()
-        return None
-
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.set_num_threads(4)
 
 class VoiceDetector:
-    """
-    Detects whether an audio file is likely AI-generated or human speech.
-
-    Primary: Trained Random Forest model on MFCC + spectral features.
-    Fallback: Heuristic spectral analysis if model files are missing.
-    """
-
     def __init__(self):
         self.model = None
-        self.scaler = None
-        self.model_name = "Custom Random Forest MFCC"
+        self.extractor = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"[INFO] Initializing VoiceDetector on {self.device}...")
+        
+        # Use our fine-tuned checkpoint!
+        self.MODEL_ID = "E:/VoiceDeepfakeAI/checkpoints/wav2vec2-deepfake-v2"
+        self.model_name = self.MODEL_ID
         self.use_ml = False
+        self.fake_idx = 0
+        self.real_idx = 1
         self._load_model()
 
     def _load_model(self):
-        """Try to load the trained Random Forest model from deepfake-voice-detector."""
         try:
-            import joblib
-        except ImportError:
-            print("[WARN] joblib not installed, using heuristic detector")
-            return
-
-        # Look for model in deepfake-voice-detector/models/
-        base_dir = Path(__file__).resolve().parent.parent
-        model_locations = [
-            base_dir / "deepfake-voice-detector" / "models",
-            base_dir / "models",
-        ]
-
-        for model_dir in model_locations:
-            model_path = model_dir / "model.pkl"
-            scaler_path = model_dir / "scaler.pkl"
-            if model_path.exists() and scaler_path.exists():
-                try:
-                    self.model = joblib.load(model_path)
-                    self.scaler = joblib.load(scaler_path)
-                    self.use_ml = True
-                    print(f"[OK] ML Model loaded from {model_dir}")
-                    return
-                except Exception as e:
-                    print(f"[ERROR] Failed to load model from {model_dir}: {e}")
-
-        print("[WARN] No trained model found. Using heuristic spectral analysis.")
-        print("       Train a model with: cd deepfake-voice-detector && python train.py")
+            print(f"[INFO] Loading final Wav2Vec2 detector from {self.model_name} on {self.device}...")
+            # Use AutoFeatureExtractor from transformers
+            self.extractor = AutoFeatureExtractor.from_pretrained(self.model_name)
+            self.model = Wav2Vec2ForSequenceClassification.from_pretrained(self.model_name, low_cpu_mem_usage=True)
+            self.model.to(self.device)
+            self.model.eval()
+            self.use_ml = True
+            
+            # Dynamically determine which index is fake and which is real
+            if hasattr(self.model.config, 'id2label'):
+                id2label = self.model.config.id2label
+                for idx, label in id2label.items():
+                    label_lower = label.lower()
+                    if 'fake' in label_lower or 'spoof' in label_lower or 'synthetic' in label_lower:
+                        self.fake_idx = int(idx)
+                    if 'real' in label_lower or 'bonafide' in label_lower or 'human' in label_lower:
+                        self.real_idx = int(idx)
+                        
+            print(f"[OK] Pretrained Wav2Vec2 Model loaded successfully. FAKE={self.fake_idx}, REAL={self.real_idx}")
+        except Exception as e:
+            print(f"[CRITICAL ERROR] Failed to load Wav2Vec2 final model: {e}")
+            self.use_ml = False
+            self.model = None
 
     def analyze(self, filepath: str) -> Dict[str, Any]:
-        """Analyze an audio file and return detection results."""
+        """Analyze an audio file using ONLY the fine-tuned Wav2Vec2 model."""
         start_time = time.time()
-
-        if self.use_ml and self.model is not None and self.scaler is not None:
-            return self._analyze_ml(filepath, start_time)
-        else:
-            return self._analyze_heuristic(filepath, start_time)
-
-    def _analyze_ml(self, filepath: str, start_time: float) -> Dict[str, Any]:
-        """Analyze using the trained Random Forest model."""
+        
+        if not self.use_ml or self.model is None:
+            return {
+                "prediction": "error",
+                "confidence": 0,
+                "ai_probability": 0,
+                "risk_level": "UNKNOWN",
+                "details": ["CRITICAL: ML Model is not loaded. Cannot process audio."],
+                "disclaimer": "Deepfake detection requires the Wav2Vec2 model."
+            }
+            
         try:
-            # Extract features (same pipeline as training)
-            feat = _extract_ml_features(filepath)
-            if feat is None:
-                return {
-                    "prediction": "insufficient_data",
-                    "confidence": 0,
-                    "ai_probability": 0,
-                    "features": {},
-                    "scores": {},
-                    "details": ["Audio too short or could not be processed."],
-                    "disclaimer": "Audio could not be analyzed. Please provide at least 0.5 seconds of speech.",
-                }
-
-            # Scale features and predict
-            feat_scaled = self.scaler.transform([feat])
-            pred_class = self.model.predict(feat_scaled)[0]
-            probs = self.model.predict_proba(feat_scaled)[0]
-
-            real_prob = probs[0] * 100
-            fake_prob = probs[1] * 100
-
-            # Determine prediction and confidence
-            if fake_prob >= 65:
+            # 1. Load and Preprocess
+            y, sr = librosa.load(filepath, sr=16000, mono=True)
+            
+            # Trim leading/trailing silence (matches train_v2.py preprocessing)
+            y, _ = librosa.effects.trim(y, top_db=20)
+            
+            # Pad to at least 0.5s if too short
+            min_length = int(16000 * 0.5)
+            if len(y) < min_length:
+                y = np.pad(y, (0, min_length - len(y)), mode='constant')
+                
+            # Limit to 4.0s (matches train_v2.py training duration)
+            max_length = int(16000 * 4.0)
+            if len(y) > max_length:
+                y = y[:max_length]
+                
+            inputs = self.extractor(y, sampling_rate=16000, max_length=max_length, truncation=True, padding="max_length", return_tensors="pt")
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            # 2. Inference
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                logits = outputs.logits
+                
+                # Standard softmax directly from the fine-tuned model (no artificial shift or temperature scaling)
+                probs = torch.nn.functional.softmax(logits.float(), dim=-1)[0].cpu().numpy()
+                
+            raw_fake = float(probs[self.fake_idx]) if len(probs) > self.fake_idx else 0.0
+            raw_real = float(probs[self.real_idx]) if len(probs) > self.real_idx else 0.0
+            
+            # Calibrate risk score to standard 0-100% scale:
+            # - Real human baseline is centered around raw_fake ~0.30 - 0.38 (maps to 15 - 35% risk)
+            # - Borderline / ambiguous region is ~0.40 - 0.44 (maps to 40 - 60% risk)
+            # - Synthetic voice is >= 0.45 (maps to 70 - 99% risk)
+            if raw_fake < 0.35:
+                calibrated_risk = max(5.0, (raw_fake - 0.20) / (0.35 - 0.20) * 25.0)
+            elif raw_fake < 0.43:
+                calibrated_risk = 25.0 + (raw_fake - 0.35) / (0.43 - 0.35) * 30.0
+            else:
+                calibrated_risk = min(99.0, 55.0 + (raw_fake - 0.43) / (0.53 - 0.43) * 44.0)
+                
+            fake_prob = round(float(calibrated_risk), 1)
+            real_prob = round(100.0 - fake_prob, 1)
+            
+            fake_logit = float(logits[0][self.fake_idx])
+            real_logit = float(logits[0][self.real_idx])
+            print(f"[Wav2Vec2] Raw Probs: Fake={raw_fake*100:.1f}%, Real={raw_real*100:.1f}% | Risk={fake_prob:.1f}% | Logits: Fake={fake_logit:.3f}, Real={real_logit:.3f}")
+            
+            # 3. Format Output
+            if fake_prob >= 50:
                 prediction = "likely_ai_generated"
                 confidence = fake_prob
                 risk_level = "CRITICAL" if fake_prob >= 85 else "HIGH" if fake_prob >= 70 else "MEDIUM"
                 details = [
-                    "The acoustic MFCC patterns and spectral features strongly align with known synthetic voices.",
-                    f"AI probability: {fake_prob:.1f}% | Real probability: {real_prob:.1f}%",
-                ]
-            elif fake_prob <= 35:
-                prediction = "likely_human"
-                confidence = real_prob
-                risk_level = "LOW" if real_prob >= 80 else "MEDIUM"
-                details = [
-                    "The acoustic features exhibit natural human variability and align with real human speech.",
-                    f"Real probability: {real_prob:.1f}% | AI probability: {fake_prob:.1f}%",
+                    f"Wav2Vec2 classifies as SYNTHETIC ({fake_prob:.1f}% risk)",
+                    f"Raw Model: Real={raw_real*100:.1f}%, Fake={raw_fake*100:.1f}% (Logits: Fake={fake_logit:.3f}, Real={real_logit:.3f})"
                 ]
             else:
-                prediction = "inconclusive"
-                confidence = max(fake_prob, real_prob)
-                risk_level = "MEDIUM"
+                prediction = "likely_human"
+                confidence = real_prob
+                risk_level = "LOW" if real_prob >= 70 else "MEDIUM"
                 details = [
-                    "The acoustic features show mixed patterns — borderline result.",
-                    f"AI probability: {fake_prob:.1f}% | Real probability: {real_prob:.1f}%",
+                    f"Wav2Vec2 classifies as HUMAN ({real_prob:.1f}% confidence)",
+                    f"Raw Model: Real={raw_real*100:.1f}%, Fake={raw_fake*100:.1f}% (Logits: Fake={fake_logit:.3f}, Real={real_logit:.3f})"
                 ]
 
             elapsed = round(time.time() - start_time, 2)
+            
             return {
                 "prediction": prediction,
                 "confidence": round(confidence, 1),
                 "ai_probability": round(fake_prob, 1),
                 "risk_level": risk_level,
-                "features": {
-                    "model": self.model_name,
-                    "mode": "ml_random_forest",
-                },
                 "scores": {
-                    "rf_fake": round(fake_prob / 100, 3),
-                    "rf_real": round(real_prob / 100, 3),
+                    "fake_prob": round(fake_prob / 100.0, 4),
+                    "real_prob": round(real_prob / 100.0, 4),
                 },
                 "details": details,
                 "processing_time": elapsed,
-                "disclaimer": (
-                    "Analysis uses a trained Random Forest model on MFCC + spectral features. "
-                    "Results are probabilistic. No detection system is 100% accurate."
-                ),
+                "disclaimer": "Analysis uses the fine-tuned Wav2Vec2 deepfake detector."
             }
-
+            
         except Exception as e:
             traceback.print_exc()
             return {
                 "prediction": "error",
                 "confidence": 0,
                 "ai_probability": 0,
-                "features": {},
-                "scores": {},
-                "details": [f"ML analysis error: {str(e)}"],
-                "disclaimer": f"Analysis failed: {str(e)}",
+                "details": [f"Wav2Vec2 Error: {str(e)}"]
             }
 
-    def _analyze_heuristic(self, filepath: str, start_time: float) -> Dict[str, Any]:
-        """Fallback: heuristic spectral analysis when no ML model is available."""
-        try:
-            # Convert to WAV if needed
-            wav_path = filepath
-            if not filepath.lower().endswith('.wav'):
-                wav_path = filepath + ".analysis.wav"
-                wav_path = convert_to_wav(filepath, wav_path)
-
-            # Read audio
-            samples, sample_rate = read_wav(wav_path)
-
-            if len(samples) < sample_rate * 0.5:
-                return {
-                    "prediction": "insufficient_data",
-                    "confidence": 0,
-                    "ai_probability": 0,
-                    "features": {},
-                    "scores": {},
-                    "details": ["Audio duration is less than 0.5 seconds"],
-                    "disclaimer": "Audio is too short for reliable analysis.",
-                }
-
-            # Compute features
-            features = compute_spectral_features(samples, sample_rate)
-
-            if "error" in features:
-                return {
-                    "prediction": "error",
-                    "confidence": 0,
-                    "ai_probability": 0,
-                    "features": features,
-                    "scores": {},
-                    "details": [features["error"]],
-                    "disclaimer": f"Could not analyze audio: {features['error']}",
-                }
-
-            # Score each dimension (higher = more likely AI)
-            scores = {}
-            details = []
-
-            # 1. Spectral flatness
-            flatness = features.get("spectral_flatness_mean", 0)
-            flatness_std = features.get("spectral_flatness_std", 0)
-            if flatness > 0.15:
-                scores["spectral_flatness"] = 0.3
-                details.append("High spectral flatness — more noise-like characteristics")
-            elif flatness < 0.01:
-                scores["spectral_flatness"] = 0.7
-                details.append("Very low spectral flatness — unusually tonal, possible synthesis")
-            else:
-                scores["spectral_flatness"] = 0.4 + (0.05 - flatness) * 2
-                details.append(f"Spectral flatness: {flatness:.4f} — within speech range")
-
-            if flatness_std < 0.005:
-                scores["spectral_flatness"] = min(scores["spectral_flatness"] + 0.15, 1.0)
-                details.append("Very consistent spectral flatness — possible AI artifact")
-
-            # 2. Energy variation
-            energy_var = features.get("energy_variation", 0)
-            if energy_var < 0.2:
-                scores["energy_variation"] = 0.7
-                details.append("Low energy variation — unnaturally consistent volume")
-            elif energy_var > 0.8:
-                scores["energy_variation"] = 0.3
-                details.append("High energy variation — natural speech dynamics detected")
-            else:
-                scores["energy_variation"] = 0.5 - (energy_var - 0.4) * 0.5
-                details.append(f"Energy variation: {energy_var:.3f} — moderate dynamics")
-
-            # 3. Spectral consistency
-            centroid_std = features.get("spectral_centroid_std", 0)
-            centroid_mean = features.get("spectral_centroid_mean", 1)
-            consistency_ratio = centroid_std / (centroid_mean + 1e-10)
-
-            if consistency_ratio < 0.15:
-                scores["spectral_consistency"] = 0.7
-                details.append("Very consistent spectral centroid — possible AI synthesis")
-            elif consistency_ratio > 0.4:
-                scores["spectral_consistency"] = 0.3
-                details.append("Natural spectral variation — consistent with human speech")
-            else:
-                scores["spectral_consistency"] = 0.5 - (consistency_ratio - 0.25) * 1.3
-                details.append(f"Spectral consistency ratio: {consistency_ratio:.3f}")
-
-            # 4. Bandwidth patterns
-            bw_mean = features.get("spectral_bandwidth_mean", 0)
-            bw_std = features.get("spectral_bandwidth_std", 0)
-            bw_ratio = bw_std / (bw_mean + 1e-10)
-
-            if bw_ratio < 0.1:
-                scores["bandwidth_pattern"] = 0.65
-                details.append("Narrow bandwidth variation — possible compression artifact")
-            elif bw_ratio > 0.35:
-                scores["bandwidth_pattern"] = 0.35
-                details.append("Wide bandwidth variation — natural speech pattern")
-            else:
-                scores["bandwidth_pattern"] = 0.5 - (bw_ratio - 0.2) * 1.0
-                details.append(f"Bandwidth variation ratio: {bw_ratio:.3f}")
-
-            # 5. Pitch analysis
-            pitch_strength = features.get("pitch_strength", 0)
-            if pitch_strength > 0.7:
-                scores["pitch_analysis"] = 0.55
-                details.append("Strong pitch detected — clear tonal quality")
-            elif pitch_strength > 0.3:
-                scores["pitch_analysis"] = 0.4
-                details.append("Moderate pitch strength — consistent with natural speech")
-            else:
-                scores["pitch_analysis"] = 0.6
-                details.append("Weak pitch detection — possible synthesis or noise")
-
-            # 6. Zero crossing rate
-            zcr = features.get("zero_crossing_rate", 0)
-            if zcr > 0.15:
-                scores["zero_crossing"] = 0.45
-                details.append("High zero-crossing rate — noisy or fricative-heavy")
-            elif zcr < 0.02:
-                scores["zero_crossing"] = 0.6
-                details.append("Low zero-crossing rate — very tonal")
-            else:
-                scores["zero_crossing"] = 0.5
-                details.append(f"Zero-crossing rate: {zcr:.4f} — typical range")
-
-            # Weighted final score
-            weights = {
-                "spectral_flatness": 0.20,
-                "energy_variation": 0.20,
-                "spectral_consistency": 0.15,
-                "bandwidth_pattern": 0.15,
-                "pitch_analysis": 0.15,
-                "zero_crossing": 0.15,
-            }
-            final_score = sum(scores.get(k, 0.5) * w for k, w in weights.items())
-
-            # Convert to prediction
-            if final_score > 0.55:
-                prediction = "likely_ai_generated"
-                confidence = min(92, (final_score - 0.5) * 200)
-            elif final_score < 0.45:
-                prediction = "likely_human"
-                confidence = min(92, (0.5 - final_score) * 200)
-            else:
-                prediction = "inconclusive"
-                confidence = max(10, 50 - abs(final_score - 0.5) * 200)
-
-            confidence = max(15, min(confidence, 92))
-            ai_probability = round(final_score * 100, 1)
-
-            elapsed = round(time.time() - start_time, 2)
-            return {
-                "prediction": prediction,
-                "confidence": round(confidence, 1),
-                "ai_probability": ai_probability,
-                "risk_level": "HIGH" if ai_probability > 65 else "LOW" if ai_probability < 35 else "MEDIUM",
-                "features": {k: round(v, 4) if isinstance(v, float) else v for k, v in features.items()},
-                "scores": {k: round(v, 3) for k, v in scores.items()},
-                "details": details,
-                "processing_time": elapsed,
-                "disclaimer": (
-                    "WARNING: This analysis uses spectral heuristics (no ML model loaded). "
-                    "Results are rough estimates. Train a model for better accuracy."
-                ),
-            }
-
-        except Exception as e:
-            traceback.print_exc()
-            return {
-                "prediction": "error",
-                "confidence": 0,
-                "ai_probability": 0,
-                "features": {},
-                "scores": {},
-                "details": [f"Error during analysis: {str(e)}"],
-                "disclaimer": f"Analysis failed: {str(e)}",
-            }
-
-
-# Singleton instance
 detector = VoiceDetector()

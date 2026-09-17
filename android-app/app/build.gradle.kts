@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-layout.buildDirectory.set(file("build2"))
+layout.buildDirectory.set(file("C:/tmp/voice-shield-build"))
 
 android {
     namespace = "com.voice.shield"
@@ -49,6 +49,19 @@ dependencies {
     // OkHttp (WebSocket client)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Material (for notification icons etc.)
+    // Material Design 3
     implementation("com.google.android.material:material:1.11.0")
+
+    // Constraint Layout
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+
+    // Navigation Component
+    val navVersion = "2.7.7"
+    implementation("androidx.navigation:navigation-fragment-ktx:$navVersion")
+    implementation("androidx.navigation:navigation-ui-ktx:$navVersion")
+    
+    // Retrofit & Gson
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 }
