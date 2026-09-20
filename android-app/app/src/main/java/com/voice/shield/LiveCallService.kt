@@ -1,17 +1,22 @@
 package com.voice.shield
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.view.accessibility.AccessibilityEvent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +51,7 @@ class LiveCallService : AccessibilityService() {
     companion object {
         private const val TAG = "LiveCallService"
         private const val CHANNEL_ID = "TrustVoiceCallShieldChannel"
+        private const val NOTIFICATION_ID = 2001
 
         // Broadcast action and extra key for the Floating HUD
         const val ACTION_HUD_UPDATE = "com.voice.shield.HUD_UPDATE"
@@ -79,6 +85,9 @@ class LiveCallService : AccessibilityService() {
     private var audioRecord: AudioRecord? = null
     private val isRecording = AtomicBoolean(false)
 
+    private var activeAudioSourceIndex = 0
+    private var audioSourcesToTry = intArrayOf()
+
     private var webSocket: WebSocket? = null
     private val isWebSocketConnected = AtomicBoolean(false)
     private var reconnectAttempts = 0
@@ -93,17 +102,72 @@ class LiveCallService : AccessibilityService() {
     private var currentCallerName = "Unknown Caller"
     private var isSimulation = false
 
+    private fun getAudioSourceName(source: Int): String {
+        return when (source) {
+            MediaRecorder.AudioSource.MIC -> "MIC"
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION -> "VOICE_COMMUNICATION"
+            MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
+            MediaRecorder.AudioSource.CAMCORDER -> "CAMCORDER"
+            MediaRecorder.AudioSource.DEFAULT -> "DEFAULT"
+            else -> "SOURCE_$source"
+        }
+    }
+
+    private fun buildNotification(callerName: String, callerNumber: String): Notification {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val callerDisplay = if (callerName == "Unknown Caller") callerNumber else "$callerName ($callerNumber)"
+        val contentText = if (isSimulation) {
+            "Simulating live call monitoring for AI deepfakes..."
+        } else {
+            "Active call with $callerDisplay — monitoring for AI voice scams (Use Speakerphone)"
+        }
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("TrustVoice Call Shield Active")
+            .setContentText(contentText)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
     private val commandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action
             Log.i(TAG, "CommandReceiver received action: $action")
             
-        if (action == ACTION_START_RECORDING) {
+            if (action == ACTION_START_RECORDING) {
                 if (!isRecording.get()) {
                     currentCallerNumber = intent?.getStringExtra("caller_number") ?: "Unknown"
                     currentCallerName = intent?.getStringExtra("caller_name") ?: "Unknown Caller"
                     isSimulation = intent?.getBooleanExtra("is_simulation", false) ?: false
                     
+                    // Promote to foreground service with microphone type to satisfy Android background audio capture policies
+                    try {
+                        val notification = buildNotification(currentCallerName, currentCallerNumber)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForeground(
+                                NOTIFICATION_ID,
+                                notification,
+                                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                            )
+                        } else {
+                            startForeground(NOTIFICATION_ID, notification)
+                        }
+                        Log.i(TAG, "Promoted LiveCallService to foreground with MICROPHONE type")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "startForeground threw exception: ${e.message}")
+                    }
+
                     val hudIntent = Intent(context, FloatingHUDService::class.java)
                     startService(hudIntent)
                     
@@ -117,6 +181,17 @@ class LiveCallService : AccessibilityService() {
                     
                     val hudIntent = Intent(context, FloatingHUDService::class.java)
                     stopService(hudIntent)
+
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            stopForeground(true)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "stopForeground threw exception: ${e.message}")
+                    }
                 }
             }
         }
@@ -145,11 +220,6 @@ class LiveCallService : AccessibilityService() {
         }
         
         ContextCompat.registerReceiver(this, commandReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-
-        // Standard initialization
-        // We can omit startForeground because AccessibilityServices generally don't need it
-        // unless we specifically want a permanent notification.
-        // We will not start the HUD here. We wait for a call to start it.
         Log.i(TAG, "AccessibilityService running, waiting for phone call to begin recording...")
     }
 
@@ -168,6 +238,18 @@ class LiveCallService : AccessibilityService() {
         
         stopAudioCapture()
         disconnectWebSocket()
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+
         serviceScope.cancel()
         serviceJob.cancel()
         Log.i(TAG, "LiveCallService destroyed cleanly")
@@ -292,6 +374,35 @@ class LiveCallService : AccessibilityService() {
     //  Audio Capture
     // =========================================================================
 
+    @Suppress("MissingPermission")
+    private fun initAudioRecordForSource(sourceIndex: Int): AudioRecord? {
+        if (sourceIndex < 0 || sourceIndex >= audioSourcesToTry.size) return null
+        val src = audioSourcesToTry[sourceIndex]
+        val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        if (minBuf == AudioRecord.ERROR || minBuf == AudioRecord.ERROR_BAD_VALUE) {
+            Log.e(TAG, "AudioRecord.getMinBufferSize returned error: $minBuf")
+            return null
+        }
+        return try {
+            val record = AudioRecord(
+                src,
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_FORMAT,
+                maxOf(minBuf, BUFFER_SIZE_BYTES)
+            )
+            if (record.state == AudioRecord.STATE_INITIALIZED) {
+                record
+            } else {
+                record.release()
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed initializing ${getAudioSourceName(src)}: ${e.message}")
+            null
+        }
+    }
+
     @Suppress("MissingPermission")  // Permission checked at runtime in the Activity
     private fun startAudioCapture() {
         if (isRecording.get()) {
@@ -300,37 +411,36 @@ class LiveCallService : AccessibilityService() {
         }
 
         try {
-            val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-            if (minBuf == AudioRecord.ERROR || minBuf == AudioRecord.ERROR_BAD_VALUE) {
-                Log.e(TAG, "AudioRecord.getMinBufferSize returned error: $minBuf")
-                return
+            audioSourcesToTry = if (isSimulation) {
+                intArrayOf(
+                    MediaRecorder.AudioSource.MIC,
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    MediaRecorder.AudioSource.DEFAULT
+                )
+            } else {
+                // For real phone calls, Android telephony HAL silences standard MIC (returns 0s).
+                // VOICE_COMMUNICATION is designed for active call audio with hardware AEC/NS.
+                // VOICE_RECOGNITION bypasses telecom mute on many OEM devices.
+                // CAMCORDER uses the secondary exterior mic.
+                // MIC & DEFAULT as final fallbacks.
+                intArrayOf(
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    MediaRecorder.AudioSource.MIC,
+                    MediaRecorder.AudioSource.CAMCORDER,
+                    MediaRecorder.AudioSource.DEFAULT
+                )
             }
 
-            // Select optimal audio source: MIC for pure raw capture (no hardware AEC cancelling loudspeaker caller),
-            // with graceful fallback to VOICE_RECOGNITION if needed.
-            val sourcesToTry = intArrayOf(MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION)
-
+            activeAudioSourceIndex = 0
             var initializedRecord: AudioRecord? = null
-            var usedSource = -1
 
-            for (src in sourcesToTry) {
-                try {
-                    val record = AudioRecord(
-                        src,
-                        SAMPLE_RATE,
-                        CHANNEL_CONFIG,
-                        AUDIO_FORMAT,
-                        maxOf(minBuf, BUFFER_SIZE_BYTES)
-                    )
-                    if (record.state == AudioRecord.STATE_INITIALIZED) {
-                        initializedRecord = record
-                        usedSource = src
-                        break
-                    } else {
-                        record.release()
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed initializing source $src: ${e.message}")
+            for (i in audioSourcesToTry.indices) {
+                val record = initAudioRecordForSource(i)
+                if (record != null) {
+                    initializedRecord = record
+                    activeAudioSourceIndex = i
+                    break
                 }
             }
 
@@ -342,8 +452,8 @@ class LiveCallService : AccessibilityService() {
             audioRecord = initializedRecord
             audioRecord!!.startRecording()
             isRecording.set(true)
-            val sourceName = if (usedSource == MediaRecorder.AudioSource.MIC) "MIC" else "VOICE_RECOGNITION"
-            Log.i(TAG, "AudioRecord started at ${SAMPLE_RATE}Hz using source: $sourceName")
+            val sourceName = getAudioSourceName(audioSourcesToTry[activeAudioSourceIndex])
+            Log.i(TAG, "AudioRecord started at ${SAMPLE_RATE}Hz using source: $sourceName (isSimulation=$isSimulation)")
 
             // Launch the continuous read-send coroutine
             serviceScope.launch { audioReadLoop() }
@@ -357,23 +467,76 @@ class LiveCallService : AccessibilityService() {
 
     /**
      * Continuously reads from the AudioRecord in a background coroutine,
-     * accumulates exactly [BUFFER_SIZE_BYTES] (3 seconds), and pushes
-     * the chunk over the WebSocket as a raw binary message.
+     * accumulates exactly [BUFFER_SIZE_BYTES] (1.5 seconds / 48000 bytes),
+     * checks for silent (all-zero) buffers, dynamically falls back to alternative
+     * sources if the OS silences the current source, and pushes valid chunks
+     * over the WebSocket as raw binary messages.
      */
     private fun audioReadLoop() {
         val buffer = ByteArray(BUFFER_SIZE_BYTES)
         var offset = 0
+        var consecutiveAllZeroChunks = 0
 
         while (isRecording.get() && serviceScope.isActive) {
             val remaining = BUFFER_SIZE_BYTES - offset
-            val read = audioRecord?.read(buffer, offset, remaining) ?: break
+            val currentRec = audioRecord ?: break
+            val read = try {
+                currentRec.read(buffer, offset, remaining)
+            } catch (e: Exception) {
+                Log.e(TAG, "AudioRecord read exception: ${e.message}")
+                break
+            }
 
             when {
                 read > 0 -> {
                     offset += read
                     if (offset >= BUFFER_SIZE_BYTES) {
-                        // Full 3-second chunk ready
-                        sendAudioChunk(buffer.copyOf())   // copy to avoid mutation
+                        // Check if this chunk is completely zero (hardware/OS silenced)
+                        var isAllZero = true
+                        for (b in buffer) {
+                            if (b != 0.toByte()) {
+                                isAllZero = false
+                                break
+                            }
+                        }
+
+                        if (isAllZero) {
+                            consecutiveAllZeroChunks++
+                            val currentSource = getAudioSourceName(audioSourcesToTry[activeAudioSourceIndex])
+                            Log.w(TAG, "Chunk was 100% zeros! (silent chunk #$consecutiveAllZeroChunks on $currentSource)")
+
+                            // If we get 2 consecutive silent chunks (3 seconds of pure 0x00) and have more sources:
+                            if (consecutiveAllZeroChunks >= 2 && activeAudioSourceIndex + 1 < audioSourcesToTry.size) {
+                                activeAudioSourceIndex++
+                                val nextSource = getAudioSourceName(audioSourcesToTry[activeAudioSourceIndex])
+                                Log.i(TAG, "Auto-switching from $currentSource to $nextSource to bypass OS silence...")
+
+                                try {
+                                    audioRecord?.stop()
+                                } catch (e: Exception) { /* ignore */ }
+                                audioRecord?.release()
+                                audioRecord = null
+
+                                val newRecord = initAudioRecordForSource(activeAudioSourceIndex)
+                                if (newRecord != null) {
+                                    audioRecord = newRecord
+                                    audioRecord!!.startRecording()
+                                    consecutiveAllZeroChunks = 0
+                                    Log.i(TAG, "Successfully switched to $nextSource")
+                                } else {
+                                    Log.w(TAG, "Failed initializing $nextSource, keeping search open")
+                                }
+                            }
+                        } else {
+                            // Non-zero audio detected! Reset silence counter
+                            if (consecutiveAllZeroChunks > 0) {
+                                Log.i(TAG, "Real acoustic audio detected on source ${getAudioSourceName(audioSourcesToTry[activeAudioSourceIndex])}!")
+                                consecutiveAllZeroChunks = 0
+                            }
+                        }
+
+                        // Send audio chunk to backend (copy to avoid mutation)
+                        sendAudioChunk(buffer.copyOf())
                         offset = 0
                     }
                 }

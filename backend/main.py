@@ -793,11 +793,15 @@ async def live_monitoring(websocket: WebSocket, token: str, caller_number: str =
                     risk_score = 0.0
                     label = "Silence"
                     is_alert = False
-                    suggestion = "Waiting for caller..." if not threat_latched else "⚠️ Caller paused (Synthetic voice detected on this call)"
                     speaker_label = "silence"
                     last_speaker_category = "silence"
                     speaker_category = "silence"
-                    reasons.append("Ambient room silence (no active speech detected)")
+                    if peak == 0.0 and rms == 0.0:
+                        suggestion = "Audio stream silenced by phone call. Turn ON Speakerphone!"
+                        reasons.append("[DIAGNOSTIC] Audio stream is 0.00000 (Muted by Android call policy). Turn ON Speakerphone on device.")
+                    else:
+                        suggestion = "Waiting for caller..." if not threat_latched else "⚠️ Caller paused (Synthetic voice detected on this call)"
+                        reasons.append("Ambient room silence (no active speech detected)")
                 else:
                     # Active Speech Present: Evaluate with the AI Vocoder Defense Detector!
                     # If transitioning from silence, evaluate the active speech segment directly
@@ -919,7 +923,10 @@ async def live_monitoring(websocket: WebSocket, token: str, caller_number: str =
                 # Compute speaker_match percentage for Android UI
                 speaker_match_pct = 100 if speaker_verified else (80 if speaker_category == "user" else 0)
                 
-                log_line = f"[LIVE MONITOR] rms={rms:.5f}, peak={peak:.5f} -> Speaker={speaker_label.upper()}, Risk={risk_score:.1f}%, Label='{label}'"
+                if peak == 0.0 and rms == 0.0:
+                    log_line = f"[LIVE MONITOR] rms={rms:.5f}, peak={peak:.5f} -> Speaker={speaker_label.upper()}, Risk={risk_score:.1f}%, Label='{label}' (MUTED: Turn ON Speakerphone)"
+                else:
+                    log_line = f"[LIVE MONITOR] rms={rms:.5f}, peak={peak:.5f} -> Speaker={speaker_label.upper()}, Risk={risk_score:.1f}%, Label='{label}'"
                 print(log_line)
                 try:
                     with open(STORAGE_DIR / "live_monitor.log", "a", encoding="utf-8") as f_log:

@@ -200,6 +200,8 @@ class FloatingHUDService : Service() {
             
             val callerInfo = if (callerName == "Unknown Caller") callerNumber else "$callerName ($callerNumber)"
             
+            val serverSuggestion = json.optString("suggestion", "")
+
             // Threat Latching State: Remember if an AI threat occurred during this call
             if (isAlert || (speaker == "caller" && rawRiskScore >= 50) || serverThreatLatched) {
                 hasThreatLatched = true
@@ -215,7 +217,7 @@ class FloatingHUDService : Service() {
             var badgeColor = Color.parseColor("#FFCA28") // Amber
             var badgeText = "SCANNING..."
             var meterColor = Color.parseColor("#00E676") // Green
-            var advisoryText = "Monitoring audio..."
+            var advisoryText = if (serverSuggestion.isNotBlank()) serverSuggestion else "Monitoring audio..."
             var shouldPulse = false
 
             when (speaker) {
@@ -271,11 +273,17 @@ class FloatingHUDService : Service() {
                     if (hasThreatLatched) {
                         badgeColor = Color.parseColor("#FF9100") // Orange
                         badgeText = "⚠️ CALLER PAUSED"
-                        advisoryText = "Caller paused — AI voice flagged on this call."
+                        advisoryText = if (serverSuggestion.isNotBlank()) serverSuggestion else "Caller paused — AI voice flagged on this call."
                     } else {
-                        badgeColor = Color.parseColor("#888888") // Gray
-                        badgeText = "NO SPEECH DETECTED"
-                        advisoryText = "Waiting for caller..."
+                        if (serverSuggestion.contains("Speakerphone", ignoreCase = true) || serverSuggestion.contains("muted", ignoreCase = true) || serverSuggestion.contains("silenced", ignoreCase = true)) {
+                            badgeColor = Color.parseColor("#FF9100") // Orange
+                            badgeText = "🔊 TURN ON SPEAKERPHONE"
+                            advisoryText = serverSuggestion
+                        } else {
+                            badgeColor = Color.parseColor("#888888") // Gray
+                            badgeText = "NO SPEECH DETECTED"
+                            advisoryText = if (serverSuggestion.isNotBlank()) serverSuggestion else "Waiting for caller..."
+                        }
                     }
                     stopPulseAnimation()
                 }
@@ -283,7 +291,7 @@ class FloatingHUDService : Service() {
                     badgeColor = Color.parseColor("#FFCA28") // Amber
                     badgeText = "SCANNING..."
                     meterColor = Color.parseColor("#FFCA28")
-                    advisoryText = "Listening to caller voice..."
+                    advisoryText = if (serverSuggestion.isNotBlank()) serverSuggestion else "Listening to caller voice..."
                     stopPulseAnimation()
                 }
             }
