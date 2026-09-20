@@ -60,6 +60,11 @@ class FloatingHUDService : Service() {
     private var pulseAnimator: ValueAnimator? = null
     private var isPulsing = false
 
+    private var hasThreatLatched = false
+    private var latchedRiskScore = 0
+    private var latchedAdvisory = ""
+    private var hasAlertedVibration = false
+
     // Broadcast receiver to get updates from LiveCallService
     private val hudUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -93,6 +98,10 @@ class FloatingHUDService : Service() {
             Log.e(TAG, "Failed to unregister receiver", e)
         }
         
+        hasThreatLatched = false
+        latchedRiskScore = 0
+        latchedAdvisory = ""
+        hasAlertedVibration = false
         pulseAnimator?.cancel()
         
         floatingView?.let {
@@ -182,13 +191,27 @@ class FloatingHUDService : Service() {
         try {
             val json = JSONObject(jsonText)
             val speaker = json.optString("speaker", "unknown")
-            val riskScore = json.optDouble("risk_score", 0.0).toInt()
+            val rawRiskScore = json.optDouble("risk_score", 0.0).toInt()
+            val isAlert = json.optBoolean("is_alert", false)
+            val serverThreatLatched = json.optBoolean("threat_latched", false)
+            val serverLatchedRisk = json.optDouble("latched_risk", 0.0).toInt()
             val callerName = json.optString("caller_name", "Unknown Caller")
             val callerNumber = json.optString("caller_number", "Unknown")
             
             val callerInfo = if (callerName == "Unknown Caller") callerNumber else "$callerName ($callerNumber)"
             
-            // Default colors
+            // Threat Latching State: Remember if an AI threat occurred during this call
+            if (isAlert || (speaker == "caller" && rawRiskScore >= 50) || serverThreatLatched) {
+                hasThreatLatched = true
+                latchedRiskScore = maxOf(latchedRiskScore, rawRiskScore, serverLatchedRisk)
+                latchedAdvisory = "Warning: AI voice detected! Do not share OTPs with $callerInfo!"
+            }
+
+            // Live score reflects the current active audio window dynamically
+            // (drops to 0% when user speaks or pauses, rises when caller speaks)
+            val riskScore = rawRiskScore
+
+            // Default colors and text
             var badgeColor = Color.parseColor("#FFCA28") // Amber
             var badgeText = "SCANNING..."
             var meterColor = Color.parseColor("#00E676") // Green
@@ -198,42 +221,76 @@ class FloatingHUDService : Service() {
             when (speaker) {
                 "user" -> {
                     badgeColor = Color.parseColor("#00E676") // Green
-                    badgeText = "VERIFIED USER"
-                    advisoryText = "You are speaking."
+                    badgeText = "👤 USER SPEAKING"
                     meterColor = Color.parseColor("#00E676")
+                    advisoryText = if (hasThreatLatched) {
+                        "⚠️ You are speaking — Caller was flagged as AI Voice!"
+                    } else {
+                        "You are speaking (Safe)."
+                    }
                     stopPulseAnimation()
                 }
                 "caller" -> {
-                    if (riskScore > 70) {
+                    if (isAlert || riskScore >= 50) {
                         badgeColor = Color.parseColor("#FF1744") // Red
-                        badgeText = "🚨 FAKE VOICE DETECTED"
-                        advisoryText = "Warning: Do not share OTPs with $callerInfo!"
+                        val label = json.optString("label", "FAKE VOICE DETECTED")
+                        badgeText = if (label.contains("SCAM", ignoreCase = true)) "🚨 SCAM CALL DETECTED" else "🚨 FAKE VOICE DETECTED"
                         meterColor = Color.parseColor("#FF1744")
+                        advisoryText = if (riskScore >= 100) {
+                            "CRITICAL: Hang up immediately! Voice clone scam."
+                        } else {
+                            "Warning: AI voice detected! Do not share OTPs with $callerInfo!"
+                        }
                         shouldPulse = true
-                    } else if (riskScore > 40) {
+
+                        // Distinct haptic vibration alert fires ONCE per threat event
+                        if (!hasAlertedVibration) {
+                            hasAlertedVibration = true
+                            triggerSingleVibrationAlert()
+                        }
+                    } else if (riskScore > 30) {
                         badgeColor = Color.parseColor("#FF9100") // Orange
                         badgeText = "SUSPICIOUS AUDIO"
-                        advisoryText = "Unusual voice patterns from $callerInfo."
                         meterColor = Color.parseColor("#FF9100")
+                        advisoryText = "Unusual voice patterns from $callerInfo."
                         stopPulseAnimation()
                     } else {
                         badgeColor = Color.parseColor("#00E676") // Green
                         badgeText = "VERIFIED CALLER"
-                        advisoryText = "Voice matches human profile for $callerInfo."
                         meterColor = Color.parseColor("#00E676")
+                        advisoryText = if (hasThreatLatched) {
+                            "Caller speaking — Prior AI activity flagged!"
+                        } else {
+                            "Voice matches human profile for $callerInfo."
+                        }
                         stopPulseAnimation()
                     }
                 }
                 "silence" -> {
-                    badgeColor = Color.parseColor("#888888") // Gray
-                    badgeText = "NO SPEECH DETECTED"
-                    advisoryText = "Waiting for caller..."
-                    meterColor = Color.parseColor("#888888")
+                    meterColor = Color.parseColor("#888888") // Gray
+                    if (hasThreatLatched) {
+                        badgeColor = Color.parseColor("#FF9100") // Orange
+                        badgeText = "⚠️ CALLER PAUSED"
+                        advisoryText = "Caller paused — AI voice flagged on this call."
+                    } else {
+                        badgeColor = Color.parseColor("#888888") // Gray
+                        badgeText = "NO SPEECH DETECTED"
+                        advisoryText = "Waiting for caller..."
+                    }
+                    stopPulseAnimation()
+                }
+                else -> {
+                    badgeColor = Color.parseColor("#FFCA28") // Amber
+                    badgeText = "SCANNING..."
+                    meterColor = Color.parseColor("#FFCA28")
+                    advisoryText = "Listening to caller voice..."
                     stopPulseAnimation()
                 }
             }
 
-            // Update Views on Main Thread (Broadcasts run on main thread by default)
+            Log.i(TAG, "updateHUD: speaker=$speaker, risk=$riskScore, badge='$badgeText'")
+
+            // Update Views on Main Thread
             tvStatusBadge.text = badgeText
             tvStatusBadge.setTextColor(badgeColor)
             
@@ -248,10 +305,8 @@ class FloatingHUDService : Service() {
 
             // ── Explainable AI Reasons ──
             val reasonsArray = json.optJSONArray("explainability_reasons")
-            if (reasonsArray != null && reasonsArray.length() > 0 && riskScore > 40) {
+            if (reasonsArray != null && reasonsArray.length() > 0 && (hasThreatLatched || riskScore >= 50)) {
                 llExplainabilityReasons.visibility = View.VISIBLE
-                
-                // Show up to 3 reasons
                 val reasonViews = listOf(tvReason1, tvReason2, tvReason3)
                 for (i in reasonViews.indices) {
                     if (i < reasonsArray.length()) {
@@ -261,7 +316,7 @@ class FloatingHUDService : Service() {
                         reasonViews[i].visibility = View.GONE
                     }
                 }
-            } else {
+            } else if (!hasThreatLatched) {
                 llExplainabilityReasons.visibility = View.GONE
                 tvReason1.visibility = View.GONE
                 tvReason2.visibility = View.GONE
@@ -270,7 +325,6 @@ class FloatingHUDService : Service() {
 
             if (shouldPulse) {
                 startPulseAnimation()
-                triggerVibrationAlert()
             }
 
         } catch (e: Exception) {
@@ -303,7 +357,7 @@ class FloatingHUDService : Service() {
         rootContainer.setBackgroundResource(R.drawable.bg_glassmorphic)
     }
 
-    private fun triggerVibrationAlert() {
+    private fun triggerSingleVibrationAlert() {
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -315,10 +369,12 @@ class FloatingHUDService : Service() {
 
             if (vibrator.hasVibrator()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                    val timings = longArrayOf(0, 250, 150, 250)
+                    val amplitudes = intArrayOf(0, VibrationEffect.DEFAULT_AMPLITUDE, 0, VibrationEffect.DEFAULT_AMPLITUDE)
+                    vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
                 } else {
                     @Suppress("DEPRECATION")
-                    vibrator.vibrate(500)
+                    vibrator.vibrate(longArrayOf(0, 250, 150, 250), -1)
                 }
             }
         } catch (e: Exception) {

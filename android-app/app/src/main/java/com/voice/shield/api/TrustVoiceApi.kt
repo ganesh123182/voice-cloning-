@@ -31,10 +31,15 @@ data class ActivityItem(
 data class EnrollmentResponse(
     val success: Boolean,
     val message: String,
-    val user_id: String?,
-    val evidence_hash: String?,
-    val blockchain_tx_hash: String?,
-    val enrollment_id: String?
+    val user_id: String? = null,
+    val evidence_hash: String? = null,
+    val voice_hash: String? = null,
+    val sha256_hash: String? = null,
+    val hash: String? = null,
+    val audio_path: String? = null,
+    val blockchain_tx_hash: String? = null,
+    val enrollment_id: String? = null,
+    val status: String? = null
 )
 
 
@@ -53,7 +58,9 @@ data class EnrollmentStatusResponse(
     val enrollment_id: String,
     val status: String,
     val evidence_hash: String,
-    val blockchain_tx_hash: String?,
+    val voice_hash: String? = null,
+    val audio_filepath: String? = null,
+    val blockchain_tx_hash: String? = null,
     val created_at: String
 )
 data class VerificationResponse(
@@ -89,7 +96,8 @@ interface TrustVoiceApi {
     @POST("/api/enroll_voice")
     suspend fun enrollVoice(
         @Header("Authorization") token: String,
-        @Part file: MultipartBody.Part
+        @Part file: MultipartBody.Part,
+        @Part("user_id") userId: RequestBody? = null
     ): Response<EnrollmentResponse>
 
     @Multipart

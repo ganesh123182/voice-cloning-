@@ -109,8 +109,13 @@ class FragmentSignup : Fragment(R.layout.fragment_signup) {
                         btnSignup.text = "Sign Up"
                         btnSignup.isEnabled = true
 
-                        val token = response.body()?.access_token ?: ("demo_token_" + System.currentTimeMillis())
-                        authPrefs.edit().putString("jwt_token", token).apply()
+                        val regBody = response.body()
+                        val token = regBody?.access_token ?: ("demo_token_" + System.currentTimeMillis())
+                        val uid = regBody?.user_id ?: ("user_" + (username.hashCode().toLong() and 0xffffffffL))
+                        authPrefs.edit()
+                            .putString("jwt_token", token)
+                            .putString("user_id", uid)
+                            .apply()
                         tvPrefs.edit()
                             .putString("profile_name", fullName)
                             .putString("profile_email", if (email.isNotEmpty()) email else phone)
@@ -127,7 +132,11 @@ class FragmentSignup : Fragment(R.layout.fragment_signup) {
                         btnSignup.isEnabled = true
 
                         // Local demo registration
-                        authPrefs.edit().putString("jwt_token", "local_demo_token_" + System.currentTimeMillis()).apply()
+                        val uid = "user_" + (username.hashCode().toLong() and 0xffffffffL)
+                        authPrefs.edit()
+                            .putString("jwt_token", "local_demo_token_" + uid)
+                            .putString("user_id", uid)
+                            .apply()
                         tvPrefs.edit()
                             .putString("profile_name", fullName)
                             .putString("profile_email", if (email.isNotEmpty()) email else phone)

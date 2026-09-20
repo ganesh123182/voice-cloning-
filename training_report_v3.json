@@ -1,0 +1,20 @@
+{
+    "checkpoint": "E:\\VoiceDeepfakeAI\\checkpoints\\wav2vec2-multilingual-v3",
+    "test_samples": 140,
+    "test_accuracy": 97.86,
+    "test_f1": 97.35,
+    "test_precision": 100.0,
+    "test_recall": 94.83,
+    "test_loss": 0.079,
+    "per_language_accuracy": {
+        "english": 97.3,
+        "hinglish": 93.75,
+        "hindi": 100.0
+    },
+    "confusion_matrix": {
+        "tp": 55,
+        "fp": 0,
+        "fn": 3,
+        "tn": 82
+    }
+}

@@ -197,7 +197,7 @@ class FragmentVoiceVerification : Fragment(R.layout.fragment_voice_verification)
 
         val input = EditText(context).apply {
             setText(currentUrl)
-            setHint("http://10.201.123.212:8000/")
+            setHint("http://10.78.43.212:8000/")
             setPadding(40, 30, 40, 30)
         }
 

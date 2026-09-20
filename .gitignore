@@ -35,13 +35,15 @@ backend/voice_enrollment.db
 
 # Audio uploads & scratch recordings
 backend/uploads/
+backend/storage/
 deepfake-voice-detector/uploads/
 
 # Model Checkpoints & Large Weights (>50MB)
-deepfake-voice-detector/models/
-deepfake-voice-detector/outputs/
-models/
-backend/models/
+/deepfake-voice-detector/models/
+/deepfake-voice-detector/outputs/
+/models/
+/backend/models/*
+!/backend/models/vocoder_defense_head.joblib
 *.safetensors
 *.ckpt
 *.pt

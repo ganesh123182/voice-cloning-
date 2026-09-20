@@ -336,3 +336,187 @@ def generate_demo_speech(text: str, reference_path: Optional[str] = None) -> Tup
         result = result / max_val * 0.8
 
     return result, sample_rate
+
+
+def condition_speakerphone_audio(audio: np.ndarray, sr: int = 16000) -> np.ndarray:
+    """
+    Acoustically conditions audio captured when a call is on speakerphone.
+    - High-pass filter at 80 Hz eliminates phone chassis rumble & desk thump without clipping fundamental voice formants.
+    - Preserves wideband speech cues up to 7800 Hz so neural vocoder synthesis artifacts are retained.
+    - AGC normalizes peak amplitude to nominal speech range ~0.7.
+    """
+    import scipy.signal as sig
+    
+    y = np.asarray(audio, dtype=np.float32).copy()
+    if len(y) == 0:
+        return y
+        
+    # 1. 2nd-order High-pass filter at 80 Hz (eliminates desk thump & loudspeaker cabinet resonance)
+    b_hp, a_hp = sig.butter(2, 80 / (sr / 2), btype='highpass')
+    y_filtered = sig.filtfilt(b_hp, a_hp, y)
+    
+    # 2. Anti-aliasing high guard filter at 7800 Hz
+    b_lp, a_lp = sig.butter(2, 7800 / (sr / 2), btype='lowpass')
+    y_filtered = sig.filtfilt(b_lp, a_lp, y_filtered)
+    
+    # 3. Standardized AGC normalization (targets nominal speech peak ~0.75)
+    peak = np.max(np.abs(y_filtered))
+    if peak > 1e-4:
+        y_filtered = (y_filtered / peak) * 0.75
+        
+    return y_filtered.astype(np.float32)
+
+
+def classify_user_vs_caller(
+    audio_chunk: np.ndarray, 
+    sr: int = 16000, 
+    user_energy_threshold: float = 0.030
+) -> Tuple[str, float, float]:
+    """
+    Isolates User speech from Speakerphone Caller speech using acoustic energy profiling.
+    
+    Returns:
+        (speaker_category, rms, peak)
+        where speaker_category is:
+          - 'user'    : Near-field high energy (holding phone close to mouth)
+          - 'caller'  : Far-field loudspeaker acoustic leakage into the mic
+          - 'silence' : Background noise / silence below active speech floor
+    """
+    y = np.asarray(audio_chunk, dtype=np.float32)
+    if len(y) == 0:
+        return "silence", 0.0, 0.0
+        
+    rms = float(np.sqrt(np.mean(y**2)))
+    peak = float(np.max(np.abs(y)))
+    
+    # Genuine ambient silence threshold: quiet room background / digital silence is < 0.0022 RMS and < 0.010 Peak
+    if rms < 0.0022 and peak < 0.010:
+        return "silence", rms, peak
+    elif rms >= user_energy_threshold or peak > 0.16:
+        # Near-field user speaking directly into the phone's primary microphone
+        return "user", rms, peak
+    else:
+        # Caller voice originating from loudspeaker and captured by microphone
+        return "caller", rms, peak
+
+
+def simulate_speakerphone_rir_and_codec(
+    audio: np.ndarray, 
+    sr: int = 16000, 
+    reverb_intensity: float = 0.35
+) -> np.ndarray:
+    """
+    Simulates acoustic speakerphone conditions for stress testing:
+    1. Room Impulse Response (RIR) with realistic early wall reflections and exponential late decay.
+    2. Mobile loudspeaker acoustic coupling.
+    """
+    import scipy.signal as sig
+    
+    y = np.asarray(audio, dtype=np.float32).copy()
+    if len(y) == 0:
+        return y
+        
+    # 1. Synthesize realistic Room Impulse Response (RIR)
+    rir_len = int(sr * 0.15) # 150ms impulse response typical of room acoustics
+    rir = np.zeros(rir_len, dtype=np.float32)
+    rir[0] = 1.0 # Direct sound
+    
+    # Early reflections
+    d1 = int(sr * 0.015)
+    d2 = int(sr * 0.030)
+    if d1 < rir_len: rir[d1] = 0.25 * reverb_intensity
+    if d2 < rir_len: rir[d2] = 0.15 * reverb_intensity
+    
+    # Late exponential reverberation tail
+    t = np.linspace(0, 0.15, rir_len)
+    tail = np.random.randn(rir_len).astype(np.float32) * np.exp(-t / 0.05) * (0.03 * reverb_intensity)
+    rir += tail
+    rir = rir / np.max(np.abs(rir))
+    
+    # Convolve with RIR
+    y_rev = sig.fftconvolve(y, rir, mode='same')
+    
+    # Normalize peak to match original
+    peak = np.max(np.abs(y_rev))
+    if peak > 1e-4:
+        y_rev = y_rev / peak * min(np.max(np.abs(y)), 0.8)
+        
+    return y_rev.astype(np.float32)
+
+
+def extract_robust_vocoder_features(y: np.ndarray, sr: int = 16000) -> np.ndarray:
+    """
+    Extracts 12 invariant acoustic features that separate neural vocoder synthesis from human voice,
+    even when captured over a smartphone microphone with room acoustics and background noise.
+    """
+    import librosa
+    
+    y = np.asarray(y, dtype=np.float32).flatten()
+    if len(y) < int(sr * 0.5):
+        y = np.pad(y, (0, int(sr * 0.5) - len(y)))
+    elif len(y) > int(sr * 3.0):
+        y = y[:int(sr * 3.0)]
+        
+    # Standardize amplitude peak to nominal 0.7
+    peak = np.max(np.abs(y))
+    if peak > 1e-4:
+        y = (y / peak) * 0.7
+        
+    stft = np.abs(librosa.stft(y, n_fft=512, hop_length=160))
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=512)
+    
+    # 1. Band energies & Spectral Tilt
+    e_low = float(np.mean(stft[(freqs < 1000), :])) + 1e-6
+    e_mid = float(np.mean(stft[(freqs >= 1000) & (freqs < 3000), :])) + 1e-6
+    e_high = float(np.mean(stft[(freqs >= 3000) & (freqs < 6000), :])) + 1e-6
+    e_vhigh = float(np.mean(stft[(freqs >= 6000), :])) + 1e-6
+    
+    hf_ratio = float(e_high / e_mid)
+    vhigh_ratio = float(e_vhigh / e_mid)
+    spectral_tilt = float(e_low / (e_high + 1e-6))
+    
+    # 2. Spectral statistics
+    centroid = float(np.mean(librosa.feature.spectral_centroid(S=stft, sr=sr)))
+    bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(S=stft, sr=sr)))
+    rolloff = float(np.mean(librosa.feature.spectral_rolloff(S=stft, sr=sr, roll_percent=0.85)))
+    flatness = float(np.mean(librosa.feature.spectral_flatness(S=stft)))
+    
+    # 3. Temporal envelope modulation (neural vocoder frame transitions)
+    env = np.mean(stft, axis=0)
+    env_diff = np.abs(np.diff(env))
+    env_smoothness = float(np.std(env_diff) / (np.mean(env) + 1e-6))
+    
+    # 4. Zero crossing rate
+    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y, frame_length=512, hop_length=160)))
+    
+    # 5. MFCC deltas
+    mfcc = librosa.feature.mfcc(S=librosa.power_to_db(stft**2 + 1e-6), sr=sr, n_mfcc=13)
+    d1_var = float(np.mean(np.var(librosa.feature.delta(mfcc), axis=1)))
+    d2_var = float(np.mean(np.var(librosa.feature.delta(mfcc, order=2), axis=1)))
+    
+    # 6. Autocorrelation Harmonic Peak Strength
+    corr = np.correlate(y, y, mode='full')
+    corr = corr[len(corr)//2:]
+    min_lag = int(sr / 400)
+    max_lag = int(sr / 70)
+    if max_lag < len(corr):
+        r_max = float(np.max(corr[min_lag:max_lag]) / (corr[0] + 1e-8))
+    else:
+        r_max = 0.0
+
+    return np.array([
+        hf_ratio,
+        vhigh_ratio,
+        spectral_tilt / 20.0,
+        centroid / 4000.0,
+        bandwidth / 3000.0,
+        rolloff / 5000.0,
+        flatness * 10.0,
+        env_smoothness,
+        zcr * 5.0,
+        d1_var / 50.0,
+        d2_var / 15.0,
+        r_max
+    ], dtype=np.float32)
+
+

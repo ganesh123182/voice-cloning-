@@ -22,7 +22,7 @@
                 android:id="@+id/btn_back_enrollment"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
-                android:src="@drawable/ic_home" 
+                android:src="@drawable/ic_arrow_back" 
                 app:tint="@color/text_primary"/>
             <TextView
                 android:layout_width="0dp"
@@ -100,6 +100,7 @@
                     android:layout_marginTop="32dp" />
 
                 <TextView
+                    android:id="@+id/txt_recording_timer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="00:00 / 00:30"
@@ -121,6 +122,172 @@
             android:textAllCaps="false"
             app:cornerRadius="12dp"
             android:layout_marginTop="24dp" />
+
+        <!-- Enrolled Voice Hash & Cryptographic Profile Card -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/card_enrolled_hash"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            app:cardCornerRadius="16dp"
+            app:cardBackgroundColor="#F0FDF4"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#86EFAC"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <!-- Header Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_feature_shield_check"
+                        app:tint="#166534" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Voice Profile Active"
+                        android:textColor="#166534"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txt_badge_enrolled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_safe"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="ENROLLED"
+                        android:textColor="#15803D"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Voice Hash Section -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Biometric Voice Hash (SHA-256):"
+                    android:textColor="#374151"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    app:cardCornerRadius="8dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="#D1D5DB">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="10dp">
+
+                        <TextView
+                            android:id="@+id/txt_voice_hash_display"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:fontFamily="monospace"
+                            android:text="SHA256 Hash will appear here"
+                            android:textColor="#111827"
+                            android:textSize="12sp"
+                            android:textIsSelectable="true" />
+
+                        <Button
+                            android:id="@+id/btn_copy_hash"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:layout_marginStart="8dp"
+                            android:text="Copy"
+                            android:textSize="12sp"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#166534"
+                            app:cornerRadius="6dp" />
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <!-- Metadata details -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Enrollment ID"
+                            android:textColor="#6B7280"
+                            android:textSize="11sp" />
+                        <TextView
+                            android:id="@+id/txt_enrollment_id_display"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="N/A"
+                            android:textColor="#111827"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Storage &amp; Ledger"
+                            android:textColor="#6B7280"
+                            android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="SQLite + ledger.json"
+                            android:textColor="#166534"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
 
         <!-- Security Info -->
         <androidx.cardview.widget.CardView

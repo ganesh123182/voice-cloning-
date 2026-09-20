@@ -1,0 +1,8 @@
+TrustVoice Multilingual Model Fine-Tuning Benchmark Report
+Checkpoint: E:\VoiceDeepfakeAI\checkpoints\wav2vec2-multilingual-v3
+Test Accuracy: 97.86%
+Test F1-Score: 97.35%
+Per-Language Accuracy:
+  - English: 97.30%
+  - Hinglish: 93.75%
+  - Hindi: 100.00%

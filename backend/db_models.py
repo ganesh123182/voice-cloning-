@@ -23,10 +23,12 @@ class VoiceEnrollment(Base):
     enrollment_version = Column(Integer, default=1)
     model_version = Column(String, default="ecapa-tdnn-voxceleb")
     evidence_hash = Column(String, nullable=False)
+    voice_hash = Column(String, nullable=True)
+    audio_filepath = Column(String, nullable=True)
     blockchain_tx_hash = Column(String, nullable=True)
     blockchain_network = Column(String, nullable=True)
     status = Column(String, default="ENROLLMENT_CREATED") # BLOCKCHAIN_PENDING, BLOCKCHAIN_CONFIRMED, BLOCKCHAIN_FAILED, NOT_CONFIGURED
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     user = relationship("User", back_populates="enrollments")

@@ -10,11 +10,15 @@ PROJECT_DIR = BASE_DIR.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 GENERATED_DIR = BASE_DIR / "generated"
 MODELS_DIR = BASE_DIR / "models"
+STORAGE_DIR = BASE_DIR / "storage"
+ENROLLED_VOICES_DIR = STORAGE_DIR / "enrolled_voices"
 
 # Ensure directories exist
 UPLOAD_DIR.mkdir(exist_ok=True)
 GENERATED_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
+STORAGE_DIR.mkdir(exist_ok=True)
+ENROLLED_VOICES_DIR.mkdir(exist_ok=True)
 
 # Server settings
 HOST = "0.0.0.0"

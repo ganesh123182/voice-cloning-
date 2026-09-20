@@ -9,12 +9,15 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import com.voice.shield.api.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,11 +36,21 @@ class FragmentVoiceEnrollment : Fragment(R.layout.fragment_voice_enrollment) {
 
     private lateinit var btnStartRecording: Button
     private lateinit var progressEnrollment: ProgressBar
+    private lateinit var txtRecordingTimer: TextView
+    private var btnBack: View? = null
+    
+    private var cardEnrolledHash: View? = null
+    private var txtVoiceHashDisplay: TextView? = null
+    private var txtEnrollmentIdDisplay: TextView? = null
+    private var btnCopyHash: Button? = null
     
     private var audioRecord: AudioRecord? = null
     private var audioFile: File? = null
     private val isRecording = java.util.concurrent.atomic.AtomicBoolean(false)
     private var recordingJob: Job? = null
+    private var writeJob: Job? = null
+    private var timerJob: Job? = null
+    private var recordingStartTime = 0L
     
     private val sampleRate = 16000
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO
@@ -57,9 +70,50 @@ class FragmentVoiceEnrollment : Fragment(R.layout.fragment_voice_enrollment) {
         
         btnStartRecording = view.findViewById(R.id.btn_start_recording)
         progressEnrollment = view.findViewById(R.id.progress_enrollment)
+        txtRecordingTimer = view.findViewById(R.id.txt_recording_timer)
+        btnBack = view.findViewById(R.id.btn_back_enrollment)
+
+        cardEnrolledHash = view.findViewById(R.id.card_enrolled_hash)
+        txtVoiceHashDisplay = view.findViewById(R.id.txt_voice_hash_display)
+        txtEnrollmentIdDisplay = view.findViewById(R.id.txt_enrollment_id_display)
+        btnCopyHash = view.findViewById(R.id.btn_copy_hash)
+
+        btnBack?.setOnClickListener {
+            findNavController().navigateUp()
+        }
+
+        btnCopyHash?.setOnClickListener {
+            val text = txtVoiceHashDisplay?.text?.toString() ?: ""
+            if (text.isNotEmpty() && !text.contains("appear here")) {
+                val clipboard = requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Biometric Voice Hash", text)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(requireContext(), "Voice Hash copied to clipboard!", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Check local cache for immediate display
+        val tvPrefs = requireActivity().getSharedPreferences("TrustVoicePrefs", android.content.Context.MODE_PRIVATE)
+        val cachedHash = tvPrefs.getString("enrolled_voice_hash", null)
+        val cachedId = tvPrefs.getString("enrolled_id", null)
+        if (!cachedHash.isNullOrEmpty()) {
+            displayEnrolledVoiceCard(cachedHash, cachedId ?: "Active")
+        }
+
+        // Query backend for latest status
+        fetchEnrollmentStatus()
 
         btnStartRecording.setOnClickListener {
             if (isRecording.get()) {
+                val elapsedSec = (System.currentTimeMillis() - recordingStartTime) / 1000
+                if (elapsedSec < 3) {
+                    Toast.makeText(
+                        requireContext(),
+                        "Please speak for at least 3 seconds (${elapsedSec}s elapsed).",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setOnClickListener
+                }
                 stopRecordingAndUpload()
             } else {
                 if (checkPermissions()) {
@@ -90,6 +144,8 @@ class FragmentVoiceEnrollment : Fragment(R.layout.fragment_voice_enrollment) {
         btnStartRecording.text = "Stop Recording"
         btnStartRecording.setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.status_suspicious))
         isRecording.set(true)
+        recordingStartTime = System.currentTimeMillis()
+        txtRecordingTimer.text = "00:00 / 00:30"
         
         audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, channelConfig, audioFormat, minBufSize * 2)
         
@@ -103,10 +159,11 @@ class FragmentVoiceEnrollment : Fragment(R.layout.fragment_voice_enrollment) {
         audioFile = File(requireContext().cacheDir, "enrollment_audio.wav")
         audioRecord?.startRecording()
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        // Writer coroutine
+        writeJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val out = FileOutputStream(audioFile)
-                writeWavHeader(out, 0, 0, sampleRate, 1, sampleRate * 2) // Dummy header
+                writeWavHeader(out, 0, 0, sampleRate, 1, sampleRate * 2) // Initial header
                 
                 val buffer = ByteArray(minBufSize * 2)
                 var totalAudioLen = 0L
@@ -117,12 +174,26 @@ class FragmentVoiceEnrollment : Fragment(R.layout.fragment_voice_enrollment) {
                         totalAudioLen += read
                     }
                 }
+                out.flush()
                 out.close()
                 
-                // Overwrite the header with accurate file lengths
-                updateWavHeader(audioFile!!, totalAudioLen)
+                // Finalize accurate RIFF lengths in WAV header
+                if (audioFile != null && audioFile!!.exists()) {
+                    updateWavHeader(audioFile!!, totalAudioLen)
+                }
             } catch (e: Exception) {
                 Log.e("Enrollment", "Error writing audio file", e)
+            }
+        }
+
+        // Timer ticker coroutine
+        timerJob = lifecycleScope.launch(Dispatchers.Main) {
+            while (isRecording.get()) {
+                val elapsed = ((System.currentTimeMillis() - recordingStartTime) / 1000).toInt()
+                val min = elapsed / 60
+                val sec = elapsed % 60
+                txtRecordingTimer.text = String.format("%02d:%02d / 00:30", min, sec)
+                delay(500)
             }
         }
 
@@ -136,82 +207,155 @@ class FragmentVoiceEnrollment : Fragment(R.layout.fragment_voice_enrollment) {
     }
 
     private fun stopRecordingAndUpload() {
+        timerJob?.cancel()
         recordingJob?.cancel()
-        resetButton()
         isRecording.set(false)
+
+        btnStartRecording.isEnabled = false
+        btnStartRecording.text = "Processing..."
 
         try {
             audioRecord?.stop()
         } catch (e: Exception) {
             Log.e("Enrollment", "Error stopping recorder", e)
-        } finally {
-            audioRecord?.release()
-            audioRecord = null
         }
 
-        // Delay slightly to ensure IO thread finishes writing file
         lifecycleScope.launch {
-            delay(200)
+            // Await writer to cleanly finish writing, flushing, and updating WAV header
+            writeJob?.join()
+            try {
+                audioRecord?.release()
+            } catch (e: Exception) {}
+            audioRecord = null
             uploadAudio()
         }
     }
     
     private fun resetButton() {
+        btnStartRecording.isEnabled = true
         btnStartRecording.text = getString(R.string.start_recording)
         btnStartRecording.setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.trustvoice_primary))
     }
 
     private fun uploadAudio() {
-        if (audioFile == null || !audioFile!!.exists()) return
-        if (audioFile!!.length() < 100L) {
+        if (audioFile == null || !audioFile!!.exists() || audioFile!!.length() < 1000L) {
             Toast.makeText(requireContext(), "Recording was too short. Please try again.", Toast.LENGTH_SHORT).show()
+            resetButton()
             return
         }
 
         progressEnrollment.visibility = View.VISIBLE
-        btnStartRecording.isEnabled = false
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Send as audio/wav since we generated a proper RIFF WAV file
-                val prefs = requireActivity().getSharedPreferences("AuthPrefs", android.content.Context.MODE_PRIVATE)
-                val token = prefs.getString("jwt_token", null)
-                if (token == null) {
-                    withContext(Dispatchers.Main) { Toast.makeText(requireContext(), "Not Authenticated", Toast.LENGTH_SHORT).show() }
-                    return@launch
+                val authPrefs = requireActivity().getSharedPreferences("AuthPrefs", android.content.Context.MODE_PRIVATE)
+                val tvPrefs = requireActivity().getSharedPreferences("TrustVoicePrefs", android.content.Context.MODE_PRIVATE)
+
+                var token = authPrefs.getString("jwt_token", null)
+                var userId = authPrefs.getString("user_id", null)
+                    ?: tvPrefs.getString("profile_email", null)
+                    ?: tvPrefs.getString("profile_name", null)
+
+                if (userId.isNullOrBlank()) {
+                    userId = "user_android_" + (System.currentTimeMillis() % 100000)
+                    authPrefs.edit().putString("user_id", userId).apply()
                 }
-                
+
+                if (token.isNullOrBlank()) {
+                    token = "demo_token_" + userId
+                    authPrefs.edit().putString("jwt_token", token).apply()
+                }
+
                 val requestFile = audioFile!!.asRequestBody("audio/wav".toMediaTypeOrNull())
-                val body = MultipartBody.Part.createFormData("file", audioFile!!.name, requestFile)
-                
-                val response = RetrofitClient.instance.enrollVoice("Bearer $token", body)
+                val filePart = MultipartBody.Part.createFormData("file", audioFile!!.name, requestFile)
+                val userIdPart = userId.toRequestBody("text/plain".toMediaTypeOrNull())
+
+                val response = RetrofitClient.instance.enrollVoice("Bearer $token", filePart, userIdPart)
 
                 withContext(Dispatchers.Main) {
                     progressEnrollment.visibility = View.GONE
-                    btnStartRecording.isEnabled = true
-                    
-                    if (response.isSuccessful) {
-                        val respBody = response.body()
-                        val hash = respBody?.evidence_hash?.take(8) ?: ""
-                        val tx = respBody?.blockchain_tx_hash?.take(8) ?: "N/A"
-                        Toast.makeText(requireContext(), "Enrolled! ID: ${respBody?.enrollment_id}\nHash: $hash\nTx: $tx", Toast.LENGTH_LONG).show()
+                    resetButton()
+
+                    if (response.isSuccessful && response.body() != null) {
+                        val respBody = response.body()!!
+                        val voiceHash = respBody.voice_hash ?: respBody.sha256_hash ?: respBody.evidence_hash ?: ""
+                        val enrollId = respBody.enrollment_id ?: "OK"
+                        displayEnrolledVoiceCard(voiceHash, enrollId)
+                        Toast.makeText(
+                            requireContext(),
+                            "Voice Profile Enrolled Successfully!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        txtRecordingTimer.text = "00:00 / 00:30"
                     } else {
-                        Toast.makeText(requireContext(), "Enrollment failed: ${response.code()}", Toast.LENGTH_SHORT).show()
+                        val rawError = response.errorBody()?.string()
+                        val errorMsg = try {
+                            val json = org.json.JSONObject(rawError ?: "{}")
+                            json.optString("detail", "Enrollment failed (${response.code()})")
+                        } catch (e: Exception) {
+                            "Enrollment failed (${response.code()})"
+                        }
+                        Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     progressEnrollment.visibility = View.GONE
-                    btnStartRecording.isEnabled = true
-                    Toast.makeText(requireContext(), "Network Error", Toast.LENGTH_SHORT).show()
+                    resetButton()
+                    Toast.makeText(
+                        requireContext(),
+                        "Network Error: ${e.localizedMessage ?: "Could not connect"}",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
                 Log.e("Enrollment", "Error uploading", e)
             }
         }
     }
 
+    private fun displayEnrolledVoiceCard(hash: String, enrollmentId: String) {
+        if (hash.isEmpty()) return
+        cardEnrolledHash?.visibility = View.VISIBLE
+        txtVoiceHashDisplay?.text = hash
+        val idDisplay = if (enrollmentId.length > 16) enrollmentId.take(16) + "..." else enrollmentId
+        txtEnrollmentIdDisplay?.text = idDisplay
+        btnStartRecording.text = "Re-record Voice Profile"
+
+        try {
+            val tvPrefs = requireActivity().getSharedPreferences("TrustVoicePrefs", android.content.Context.MODE_PRIVATE)
+            tvPrefs.edit()
+                .putString("enrolled_voice_hash", hash)
+                .putString("enrolled_id", enrollmentId)
+                .apply()
+        } catch (e: Exception) {
+            Log.w("Enrollment", "Could not cache enrolled voice hash", e)
+        }
+    }
+
+    private fun fetchEnrollmentStatus() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val authPrefs = requireActivity().getSharedPreferences("AuthPrefs", android.content.Context.MODE_PRIVATE)
+                val token = authPrefs.getString("jwt_token", null) ?: return@launch
+                val resp = RetrofitClient.instance.getEnrollmentStatus("Bearer $token")
+                if (resp.isSuccessful && resp.body() != null) {
+                    val body = resp.body()!!
+                    val hash = body.voice_hash ?: body.evidence_hash
+                    withContext(Dispatchers.Main) {
+                        displayEnrolledVoiceCard(hash, body.enrollment_id)
+                    }
+                }
+            } catch (e: Exception) {
+                // Silently ignore if offline or no enrollment exists yet
+            }
+        }
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
+        timerJob?.cancel()
+        recordingJob?.cancel()
+        isRecording.set(false)
         audioRecord?.release()
         audioRecord = null
     }

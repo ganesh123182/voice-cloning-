@@ -59,13 +59,13 @@ class LiveCallService : AccessibilityService() {
         private const val SAMPLE_RATE = 16000          // 16 kHz
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        // 3-second buffer: 16000 samples/s × 2 bytes/sample × 1 channel × 3 s = 96,000 bytes
-        private const val CHUNK_DURATION_SEC = 1
-        private const val BUFFER_SIZE_BYTES = SAMPLE_RATE * 2 * 1 * CHUNK_DURATION_SEC
+        // 1.5-second sliding window buffer: 16000 samples/s × 2 bytes/sample × 1 channel × 1.5 s = 48,000 bytes
+        private const val CHUNK_DURATION_MS = 1500
+        private const val BUFFER_SIZE_BYTES = 48000
 
-        // PC's IP on phone's hotspot Wi-Fi network
+        // PC's IP on phone's hotspot / Wi-Fi network
         private const val DEFAULT_WEBSOCKET_URL =
-            "ws://10.201.123.212:8000/api/monitoring/live?token=test_token"
+            "ws://10.78.43.212:8000/api/monitoring/live?token=test_token"
 
         // Reconnection parameters
         private const val MAX_RECONNECT_ATTEMPTS = 5
@@ -91,6 +91,7 @@ class LiveCallService : AccessibilityService() {
 
     private var currentCallerNumber = "Unknown"
     private var currentCallerName = "Unknown Caller"
+    private var isSimulation = false
 
     private val commandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -101,6 +102,7 @@ class LiveCallService : AccessibilityService() {
                 if (!isRecording.get()) {
                     currentCallerNumber = intent?.getStringExtra("caller_number") ?: "Unknown"
                     currentCallerName = intent?.getStringExtra("caller_name") ?: "Unknown Caller"
+                    isSimulation = intent?.getBooleanExtra("is_simulation", false) ?: false
                     
                     val hudIntent = Intent(context, FloatingHUDService::class.java)
                     startService(hudIntent)
@@ -197,14 +199,38 @@ class LiveCallService : AccessibilityService() {
 
     private fun connectWebSocket() {
         val prefs = getSharedPreferences("TrustVoicePrefs", MODE_PRIVATE)
+        val authPrefs = getSharedPreferences("AuthPrefs", MODE_PRIVATE)
+        val authToken = authPrefs.getString("jwt_token", null)
+            ?: authPrefs.getString("user_id", null)
+            ?: "demo_user"
+
         val baseUrl = prefs.getString("websocket_url", null) ?: DEFAULT_WEBSOCKET_URL
         
-        // Append caller number and name to the WebSocket URL
-        val urlBuilder = baseUrl.toHttpUrlOrNull()?.newBuilder()
-            ?.addQueryParameter("caller_number", currentCallerNumber)
-            ?.addQueryParameter("caller_name", currentCallerName)
-        
-        val url = urlBuilder?.build()?.toString() ?: baseUrl
+        // Convert ws:// -> http:// temporarily so HttpUrl can safely parse query parameters
+        val httpUrlStr = when {
+            baseUrl.startsWith("ws://") -> "http://" + baseUrl.removePrefix("ws://")
+            baseUrl.startsWith("wss://") -> "https://" + baseUrl.removePrefix("wss://")
+            else -> baseUrl
+        }
+        val httpUrl = httpUrlStr.toHttpUrlOrNull()
+        val url = if (httpUrl != null) {
+            val builder = httpUrl.newBuilder()
+                .addQueryParameter("caller_number", currentCallerNumber)
+                .addQueryParameter("caller_name", currentCallerName)
+                .addQueryParameter("is_simulation", isSimulation.toString())
+            if (httpUrl.queryParameter("token") == null) {
+                builder.addQueryParameter("token", authToken)
+            }
+            val resultHttp = builder.build().toString()
+            when {
+                baseUrl.startsWith("ws://") -> "ws://" + resultHttp.removePrefix("http://")
+                baseUrl.startsWith("wss://") -> "wss://" + resultHttp.removePrefix("https://")
+                else -> resultHttp
+            }
+        } else {
+            val separator = if (baseUrl.contains("?")) "&" else "?"
+            "$baseUrl${separator}caller_number=${java.net.URLEncoder.encode(currentCallerNumber, "UTF-8")}&caller_name=${java.net.URLEncoder.encode(currentCallerName, "UTF-8")}&is_simulation=$isSimulation&token=${java.net.URLEncoder.encode(authToken, "UTF-8")}"
+        }
         
         Log.i(TAG, "Connecting WebSocket to: $url")
         val request = Request.Builder().url(url).build()
@@ -218,7 +244,7 @@ class LiveCallService : AccessibilityService() {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d(TAG, "WebSocket received JSON: $text")
+                Log.i(TAG, "WebSocket received JSON: $text")
                 handleServerResponse(text)
             }
 
@@ -280,27 +306,44 @@ class LiveCallService : AccessibilityService() {
                 return
             }
 
-            // Use VOICE_RECOGNITION (bypasses OS blocks via AccessibilityService)
-            val audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION
-            
-            audioRecord = AudioRecord(
-                audioSource,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                maxOf(minBuf, BUFFER_SIZE_BYTES)
-            )
+            // Select optimal audio source: MIC for pure raw capture (no hardware AEC cancelling loudspeaker caller),
+            // with graceful fallback to VOICE_RECOGNITION if needed.
+            val sourcesToTry = intArrayOf(MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION)
 
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord failed to initialize (state=${audioRecord?.state})")
-                audioRecord?.release()
-                audioRecord = null
+            var initializedRecord: AudioRecord? = null
+            var usedSource = -1
+
+            for (src in sourcesToTry) {
+                try {
+                    val record = AudioRecord(
+                        src,
+                        SAMPLE_RATE,
+                        CHANNEL_CONFIG,
+                        AUDIO_FORMAT,
+                        maxOf(minBuf, BUFFER_SIZE_BYTES)
+                    )
+                    if (record.state == AudioRecord.STATE_INITIALIZED) {
+                        initializedRecord = record
+                        usedSource = src
+                        break
+                    } else {
+                        record.release()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed initializing source $src: ${e.message}")
+                }
+            }
+
+            if (initializedRecord == null) {
+                Log.e(TAG, "Failed to initialize AudioRecord with any available audio source")
                 return
             }
 
+            audioRecord = initializedRecord
             audioRecord!!.startRecording()
             isRecording.set(true)
-            Log.i(TAG, "AudioRecord started at ${SAMPLE_RATE}Hz")
+            val sourceName = if (usedSource == MediaRecorder.AudioSource.MIC) "MIC" else "VOICE_RECOGNITION"
+            Log.i(TAG, "AudioRecord started at ${SAMPLE_RATE}Hz using source: $sourceName")
 
             // Launch the continuous read-send coroutine
             serviceScope.launch { audioReadLoop() }
@@ -400,11 +443,11 @@ class LiveCallService : AccessibilityService() {
         try {
             val json = JSONObject(jsonText)
 
-            // Log key fields for diagnostics
+            // Log key fields for diagnostics (Log.i to ensure visibility on production devices)
             val speaker = json.optString("speaker", "unknown")
             val risk = json.optDouble("risk_score", 0.0)
             val label = json.optString("label", "")
-            Log.d(TAG, "Analysis → speaker=$speaker  risk=$risk  label=$label")
+            Log.i(TAG, "Analysis → speaker=$speaker  risk=$risk  label=$label")
 
             // Broadcast to HUD
             val broadcast = Intent(ACTION_HUD_UPDATE).apply {

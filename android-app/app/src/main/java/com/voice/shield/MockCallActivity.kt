@@ -119,6 +119,9 @@ class MockCallActivity : AppCompatActivity() {
 
         // Tell the LiveCallService to start recording (simulating a real call offhook)
         val startIntent = Intent(LiveCallService.ACTION_START_RECORDING).apply {
+            putExtra("caller_name", "Simulation Test")
+            putExtra("caller_number", "Simulation")
+            putExtra("is_simulation", true)
             setPackage(packageName)
         }
         sendBroadcast(startIntent)

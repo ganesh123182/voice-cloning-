@@ -76,7 +76,11 @@ class FragmentLogin : Fragment(R.layout.fragment_login) {
         btnGoogleLogin.setOnClickListener {
             val name = "Google User"
             val email = "google.demo@trustvoice.ai"
-            authPrefs.edit().putString("jwt_token", "demo_google_token_" + System.currentTimeMillis()).apply()
+            val uid = "user_google_" + (System.currentTimeMillis() % 100000)
+            authPrefs.edit()
+                .putString("jwt_token", "demo_google_token_" + uid)
+                .putString("user_id", uid)
+                .apply()
             tvPrefs.edit()
                 .putString("profile_name", name)
                 .putString("profile_email", email)
@@ -89,7 +93,11 @@ class FragmentLogin : Fragment(R.layout.fragment_login) {
         btnPhoneLogin.setOnClickListener {
             val name = "Phone Verified User"
             val phone = "+91 98765 43210"
-            authPrefs.edit().putString("jwt_token", "demo_phone_token_" + System.currentTimeMillis()).apply()
+            val uid = "user_phone_" + (System.currentTimeMillis() % 100000)
+            authPrefs.edit()
+                .putString("jwt_token", "demo_phone_token_" + uid)
+                .putString("user_id", uid)
+                .apply()
             tvPrefs.edit()
                 .putString("profile_name", name)
                 .putString("profile_email", phone)
@@ -130,8 +138,12 @@ class FragmentLogin : Fragment(R.layout.fragment_login) {
                             val body = response.body()!!
                             val token = body.access_token ?: "demo_token"
                             val displayName = body.full_name ?: username.split("@")[0]
+                            val uid = body.user_id ?: ("user_" + (username.hashCode().toLong() and 0xffffffffL))
                             
-                            authPrefs.edit().putString("jwt_token", token).apply()
+                            authPrefs.edit()
+                                .putString("jwt_token", token)
+                                .putString("user_id", uid)
+                                .apply()
                             tvPrefs.edit()
                                 .putString("profile_name", displayName)
                                 .putString("profile_email", username)
@@ -151,9 +163,14 @@ class FragmentLogin : Fragment(R.layout.fragment_login) {
                                         ph = if (!username.contains("@")) username else null
                                     )
                                     withContext(Dispatchers.Main) {
-                                        val token = regResp.body()?.access_token ?: ("demo_token_" + System.currentTimeMillis())
-                                        val displayName = regResp.body()?.full_name ?: username.split("@")[0]
-                                        authPrefs.edit().putString("jwt_token", token).apply()
+                                        val regBody = regResp.body()
+                                        val token = regBody?.access_token ?: ("demo_token_" + System.currentTimeMillis())
+                                        val displayName = regBody?.full_name ?: username.split("@")[0]
+                                        val uid = regBody?.user_id ?: ("user_" + (username.hashCode().toLong() and 0xffffffffL))
+                                        authPrefs.edit()
+                                            .putString("jwt_token", token)
+                                            .putString("user_id", uid)
+                                            .apply()
                                         tvPrefs.edit()
                                             .putString("profile_name", displayName)
                                             .putString("profile_email", username)
@@ -164,7 +181,11 @@ class FragmentLogin : Fragment(R.layout.fragment_login) {
                                 } catch (ex: Exception) {
                                     withContext(Dispatchers.Main) {
                                         val displayName = username.split("@")[0]
-                                        authPrefs.edit().putString("jwt_token", "demo_token_" + System.currentTimeMillis()).apply()
+                                        val uid = "user_" + (username.hashCode().toLong() and 0xffffffffL)
+                                        authPrefs.edit()
+                                            .putString("jwt_token", "demo_token_" + uid)
+                                            .putString("user_id", uid)
+                                            .apply()
                                         tvPrefs.edit()
                                             .putString("profile_name", displayName)
                                             .putString("profile_email", username)
@@ -184,7 +205,11 @@ class FragmentLogin : Fragment(R.layout.fragment_login) {
 
                         // Offline fallback for demo
                         val displayName = username.split("@")[0]
-                        authPrefs.edit().putString("jwt_token", "offline_demo_token_" + System.currentTimeMillis()).apply()
+                        val uid = "user_" + (username.hashCode().toLong() and 0xffffffffL)
+                        authPrefs.edit()
+                            .putString("jwt_token", "offline_demo_token_" + uid)
+                            .putString("user_id", uid)
+                            .apply()
                         tvPrefs.edit()
                             .putString("profile_name", displayName)
                             .putString("profile_email", username)

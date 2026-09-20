@@ -6,7 +6,7 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
-    private var currentBaseUrl: String = "http://10.201.123.212:8000/"
+    private var currentBaseUrl: String = "http://10.78.43.212:8000/"
     private var apiInstance: TrustVoiceApi? = null
 
     fun getBaseUrl(): String = currentBaseUrl

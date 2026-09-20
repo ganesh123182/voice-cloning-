@@ -1,9 +1,9 @@
-from backend.database import engine, Base
+from backend.database import engine, Base, init_and_migrate_db
 from backend.db_models import User, VoiceEnrollment
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created.")
+    init_and_migrate_db()
+    print("Database tables created and migrated.")
 
 if __name__ == "__main__":
     init_db()

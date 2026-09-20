@@ -1,0 +1,61 @@
+================================================================================
+                     TRUSTVOICE DATASET VALIDATION REPORT                      
+================================================================================
+ Dataset Path: E:\VoiceDeepfakeAI\voice_deepfake_dataset
+
+[1] SIZE CHECK:
+     Total Directory Size : 132.76 MB
+     Total Audio Content  : 132.36 MB
+     Result: [PASS] (<= 500 MB constraint satisfied)
+
+[2] REAL / FAKE BALANCE CHECK:
+     Total Files : 760
+     REAL Files  : 372 (48.9%)
+     FAKE Files  : 388 (51.1%)
+     Result: [PASS] (Approximately balanced)
+
+[3] LANGUAGE DISTRIBUTION CHECK:
+     English   : 360 files
+     Hindi     : 284 files
+     Hinglish  : 116 files
+     Result: [PASS] (All 3 target languages present)
+     -> Train languages: ['hinglish', 'english', 'hindi']
+     -> Validation languages: ['hindi', 'hinglish', 'english']
+     -> Test languages: ['english', 'hinglish', 'hindi']
+
+[4] VOICE-CLONE / SYNTHETIC ANALYSIS:
+     Voice-Clone Count : 388 files
+     Detailed Fake Types: {'voice_clone': 388}
+     Result: [PASS] Prioritizes verified voice-cloned personas (Fish Audio / ElevenLabs)
+
+[5] SPEAKER DIVERSITY & LEAKAGE CHECK:
+     Total Unique Speakers : 105
+     Train Speakers        : 72
+     Validation Speakers   : 15
+     Test Speakers         : 18
+     Train/Val Overlap     : 0 speakers 
+     Train/Test Overlap    : 0 speakers 
+     Val/Test Overlap      : 0 speakers 
+     Result: [PASS] (STRICT ZERO SPEAKER LEAKAGE VERIFIED)
+
+[6] DEDUPLICATION CHECK (SHA-256):
+     Total Hashes Checked : 760
+     Duplicate Hashes     : 0
+     Result: [PASS] (Zero duplicate files)
+
+[7] AUDIO FORMAT & READABILITY CHECK:
+     Files Inspected       : 760
+     Read / Missing Errors : 0
+     Non-16kHz Files       : 0
+     Non-Mono Files        : 0
+     Result: [PASS] (100% of files are valid 16kHz Mono WAV)
+
+[8] SPLIT PROPORTIONS (Target ~70/15/15):
+     Train      : 529 files (69.6%)
+     Validation : 91 files (12.0%)
+     Test       : 140 files (18.4%)
+     Result: [PASS] Proportions aligned with speaker-disjoint grouping
+
+================================================================================
+ FINAL VALIDATION RESULT: [PASS]
+================================================================================
