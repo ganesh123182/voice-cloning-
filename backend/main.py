@@ -824,7 +824,22 @@ async def live_monitoring(websocket: WebSocket, token: str, caller_number: str =
                         recent_scores.append(threat_score)
                         risk_score = threat_score
 
-                    if threat_score >= 45.0:
+                    # Temporal consistency verification:
+                    # 1. High confidence AI detections (threat_score >= 65.0%) trigger immediately!
+                    # 2. Borderline / suspicious spikes (45.0% <= threat_score < 65.0%) require temporal consistency:
+                    #    either rolling average of recent speech chunks >= 42.0%, or 2 consecutive chunks >= 45.0%.
+                    #    This eliminates false alarms from isolated 1.5s human fricatives/consonants (/s/, /t/, /sh/).
+                    is_sustained_threat = False
+                    if threat_score >= 65.0:
+                        is_sustained_threat = True
+                    elif threat_score >= 45.0:
+                        recent_list = list(recent_scores)
+                        if len(recent_list) >= 2 and np.mean(recent_list[-2:]) >= 42.0:
+                            is_sustained_threat = True
+                        elif len(recent_list) == 1 and threat_score >= 55.0:
+                            is_sustained_threat = True
+
+                    if is_sustained_threat:
                         # Synthetic AI Voice Threat / Suspicious Voice Detected
                         threat_latched = True
                         if threat_score >= 65.0:
